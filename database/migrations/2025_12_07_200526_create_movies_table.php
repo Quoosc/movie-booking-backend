@@ -6,22 +6,26 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::create('movies', function (Blueprint $table) {
-            $table->id();
+        Schema::create('rooms', function (Blueprint $table) {
+            $table->uuid('room_id')->primary();
+
+            $table->uuid('cinema_id');
+            $table->string('room_type');
+            $table->integer('room_number');
+
             $table->timestamps();
+
+            $table->foreign('cinema_id')
+                  ->references('cinema_id')
+                  ->on('cinemas')
+                  ->onDelete('cascade');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::dropIfExists('movies');
+        Schema::dropIfExists('rooms');
     }
 };
