@@ -10,17 +10,18 @@ return new class extends Migration
     {
         Schema::create('membership_tiers', function (Blueprint $table) {
             $table->uuid('tier_id')->primary();
-            $table->string('name');          // SILVER, GOLD, PLATINUM
-            $table->integer('min_points');   // điểm tối thiểu
+            $table->string('name'); // SILVER, GOLD, PLATINUM
+            $table->integer('min_points');
 
-            // Enum DiscountType: PERCENT / FIXED_AMOUNT (nullable)
+            // discount_type: PERCENT / FIXED_AMOUNT / null
             $table->enum('discount_type', ['PERCENT', 'FIXED_AMOUNT'])->nullable();
             $table->decimal('discount_value', 10, 2)->nullable();
 
             $table->string('description')->nullable();
             $table->boolean('is_active')->default(true);
 
-            $table->timestamps(); // created_at, updated_at
+            $table->dateTime('created_at');
+            $table->dateTime('updated_at');
         });
     }
 
