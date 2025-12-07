@@ -6,20 +6,31 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('showtimes', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('showtime_id')->primary();
+
+            $table->uuid('room_id');
+            $table->uuid('movie_id');
+
+            $table->string('format');
+            $table->dateTime('start_time');
+
             $table->timestamps();
+
+            $table->foreign('room_id')
+                  ->references('room_id')
+                  ->on('rooms')
+                  ->onDelete('cascade');
+
+            $table->foreign('movie_id')
+                  ->references('movie_id')
+                  ->on('movies')
+                  ->onDelete('cascade');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('showtimes');
