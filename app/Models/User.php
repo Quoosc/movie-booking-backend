@@ -1,10 +1,11 @@
 <?php
-
+// app/Models/User.php
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 
 class User extends Authenticatable
 {
@@ -12,7 +13,7 @@ class User extends Authenticatable
 
     protected $table = 'users';
     protected $primaryKey = 'user_id';
-    public $incrementing = false;          // UUID, không auto increment
+    public $incrementing = false;
     protected $keyType = 'string';
 
     protected $fillable = [
@@ -31,6 +32,7 @@ class User extends Authenticatable
 
     protected $hidden = [
         'password',
+        'remember_token',
     ];
 
     protected $casts = [
@@ -39,7 +41,18 @@ class User extends Authenticatable
         'updated_at'     => 'datetime',
     ];
 
-    // ========== RELATIONSHIPS ==========
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function (User $user) {
+            if (!$user->user_id) {
+                $user->user_id = (string) Str::uuid();
+            }
+        });
+    }
+
+    // ====== Relationships ======
 
     public function membershipTier()
     {

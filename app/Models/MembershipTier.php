@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class MembershipTier extends Model
 {
@@ -25,12 +26,23 @@ class MembershipTier extends Model
     ];
 
     protected $casts = [
-        'min_points'    => 'integer',
-        'discount_value'=> 'float',
-        'is_active'     => 'boolean',
-        'created_at'    => 'datetime',
-        'updated_at'    => 'datetime',
+        'min_points'     => 'integer',
+        'discount_value' => 'float',
+        'is_active'      => 'boolean',
+        'created_at'     => 'datetime',
+        'updated_at'     => 'datetime',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function (MembershipTier $tier) {
+            if (!$tier->tier_id) {
+                $tier->tier_id = (string) Str::uuid();
+            }
+        });
+    }
 
     public function users()
     {
