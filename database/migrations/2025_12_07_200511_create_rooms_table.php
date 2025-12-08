@@ -11,9 +11,13 @@ return new class extends Migration
         Schema::create('rooms', function (Blueprint $table) {
             $table->uuid('room_id')->primary();
 
-            $table->uuid('cinema_id');
-            $table->string('room_type');
-            $table->integer('room_number');
+            $table->uuid('cinema_id');           // FK tới cinemas.cinema_id
+            $table->integer('room_number');      // Phòng 1, 2, 3...
+            $table->string('room_type');         // STANDARD, IMAX, 3D...
+
+            // ===== Thêm cho đúng spec =====
+            $table->integer('capacity')->nullable();     // Số ghế
+            $table->boolean('is_active')->default(true); // Phòng còn dùng?
 
             $table->timestamps();
 

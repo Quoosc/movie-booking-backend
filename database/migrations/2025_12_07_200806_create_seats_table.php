@@ -9,22 +9,22 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('seats', function (Blueprint $table) {
-            $table->uuid('seat_id')->primary();   // seat_id uuid [pk]
+            $table->uuid('seat_id')->primary();
 
-            $table->uuid('room_id');              // room_id uuid [ref: > Rooms.room_id]
+            $table->uuid('room_id');
 
-            $table->string('row_label', 10);      // 'A'
-            $table->integer('seat_number');       // 10
+            $table->string('row_label', 10);   // A, B, C...
+            $table->integer('seat_number');    // 1, 2, 3...
 
-            // seat_type SeatType { NORMAL, VIP, COUPLE }
-            $table->enum('seat_type', ['NORMAL', 'COUPLE'])->default('NORMAL');
+            // ===== Thêm VIP để khớp SeatType { NORMAL, VIP, COUPLE } =====
+            $table->enum('seat_type', ['NORMAL', 'VIP', 'COUPLE'])->default('NORMAL');
 
             $table->timestamps();
 
             $table->foreign('room_id')
-                  ->references('room_id')
-                  ->on('rooms')
-                  ->onDelete('cascade');
+                ->references('room_id')
+                ->on('rooms')
+                ->onDelete('cascade');
         });
     }
 
@@ -33,4 +33,3 @@ return new class extends Migration
         Schema::dropIfExists('seats');
     }
 };
-

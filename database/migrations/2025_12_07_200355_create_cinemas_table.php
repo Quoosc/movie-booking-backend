@@ -12,11 +12,8 @@ return new class extends Migration
             $table->uuid('cinema_id')->primary();
             $table->string('name');
             $table->string('address');
-            $table->string('hotline'); // theo ERD: không nullable
-
-            // CinemaStatus: lưu dạng string cho đúng kiểu varchar trong ERD
-            $table->string('status', 30); 
-
+            $table->string('hotline');          // KHỚP swagger
+            $table->string('status', 30)->default('ACTIVE'); // nếu muốn, FE không cần gửi
             $table->timestamps();
         });
     }
