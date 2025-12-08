@@ -9,14 +9,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('seats', function (Blueprint $table) {
-            $table->uuid('seat_id')->primary();
+            $table->uuid('seat_id')->primary();   // seat_id uuid [pk]
 
-            $table->uuid('room_id');
+            $table->uuid('room_id');              // room_id uuid [ref: > Rooms.room_id]
 
-            $table->string('row_label');   // 'A'
-            $table->integer('seat_number'); // 10
+            $table->string('row_label', 10);      // 'A'
+            $table->integer('seat_number');       // 10
 
-            $table->enum('seat_type', ['NORMAL', 'VIP', 'COUPLE'])->default('NORMAL');
+            // seat_type SeatType { NORMAL, VIP, COUPLE }
+            $table->enum('seat_type', ['NORMAL', 'COUPLE'])->default('NORMAL');
 
             $table->timestamps();
 
@@ -32,3 +33,4 @@ return new class extends Migration
         Schema::dropIfExists('seats');
     }
 };
+

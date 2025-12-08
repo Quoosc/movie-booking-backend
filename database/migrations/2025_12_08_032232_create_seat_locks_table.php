@@ -9,36 +9,40 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('seat_locks', function (Blueprint $table) {
-            // PK
-            $table->uuid('seat_lock_id')->primary();
+            $table->uuid('seat_lock_id')->primary(); // seat_lock_id uuid [pk]
 
-            // DB v2.4
-            $table->uuid('lock_owner_id'); // user_id hoặc guest_session_id
+            $table->uuid('lock_owner_id'); // guest session id hoặc user id (tùy loại)
+            // LockOwnerType { USER, GUEST_SESSION }
             $table->enum('lock_owner_type', ['USER', 'GUEST_SESSION']);
 
-            $table->uuid('user_id')->nullable(); // nullable
-            $table->uuid('showtime_id');
+            $table->uuid('user_id')->nullable();   // ref Users.user_id (nullable)
+            $table->uuid('showtime_id');           // ref Showtimes.showtime_id
 
-            $table->string('lock_key'); // token lock duy nhất
+            $table->string('lock_key', 100);       // token lock (UUID string)
 
-            $table->dateTime('created_at');
-            $table->dateTime('expires_at');
+            // created_at, expires_at theo spec
+            $table->timestamp('created_at')->useCurrent();
+            $table->timestamp('expires_at');
+
             $table->boolean('active')->default(true);
 
-            // FK
             $table->foreign('user_id')
-                ->references('user_id')->on('users')
-                ->onDelete('cascade');
+                  ->references('user_id')
+                  ->on('users')
+                  ->nullOnDelete();
 
             $table->foreign('showtime_id')
-                ->references('showtime_id')->on('showtimes')
-                ->onDelete('cascade');
+                  ->references('showtime_id')
+                  ->on('showtimes')
+                  ->onDelete('cascade');
+
+            $table->index(['showtime_id', 'active']);
+            $table->index(['lock_owner_type', 'lock_owner_id']);
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('seat_lock_seats'); // phải drop con trước
         Schema::dropIfExists('seat_locks');
     }
 };

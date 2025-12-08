@@ -9,16 +9,18 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('showtime_seats', function (Blueprint $table) {
-            $table->uuid('showtime_seat_id')->primary();
+            $table->uuid('showtime_seat_id')->primary(); // showtime_seat_id uuid [pk]
 
-            $table->uuid('seat_id');
-            $table->uuid('showtime_id');
+            $table->uuid('seat_id');       // ref Seats.seat_id
+            $table->uuid('showtime_id');   // ref Showtimes.showtime_id
 
+            // SeatStatus { AVAILABLE, LOCKED, BOOKED }
             $table->enum('seat_status', ['AVAILABLE', 'LOCKED', 'BOOKED'])
                   ->default('AVAILABLE');
 
-            $table->decimal('price', 10, 2);
-            $table->text('price_breakdown')->nullable(); // json string
+            $table->decimal('price', 10, 2)->nullable(); // price decimal
+            // price_breakdown varchar  // json string
+            $table->text('price_breakdown')->nullable(); // cho rộng hơn varchar(255)
 
             $table->timestamps();
 
@@ -31,6 +33,8 @@ return new class extends Migration
                   ->references('showtime_id')
                   ->on('showtimes')
                   ->onDelete('cascade');
+
+            $table->index(['showtime_id', 'seat_id']);
         });
     }
 

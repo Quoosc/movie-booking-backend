@@ -9,14 +9,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('showtime_ticket_types', function (Blueprint $table) {
-            $table->uuid('id')->primary();
+            $table->uuid('id')->primary();       // id uuid [pk]
 
-            $table->uuid('showtime_id');
-            $table->uuid('ticket_type_id');
+            $table->uuid('showtime_id');         // ref Showtimes.showtime_id
+            $table->uuid('ticket_type_id');      // ref TicketTypes.id
 
             $table->boolean('is_active')->default(true);
 
-            $table->timestamps();
+            $table->timestamps();                // created_at timestamp
 
             $table->foreign('showtime_id')
                   ->references('showtime_id')
@@ -27,6 +27,8 @@ return new class extends Migration
                   ->references('id')
                   ->on('ticket_types')
                   ->onDelete('cascade');
+
+            $table->index(['showtime_id']);
         });
     }
 
