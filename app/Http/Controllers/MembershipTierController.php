@@ -1,40 +1,99 @@
 <?php
 
+// app/Http/Controllers/MembershipTierController.php
 namespace App\Http\Controllers;
 
-use App\Models\MembershipTier;
+use App\Http\Resources\MembershipTierResource;
+use App\Services\MembershipTierService;
+use Illuminate\Http\Request;
 
 class MembershipTierController extends Controller
 {
-    protected function respond($data = null, string $message = 'OK', int $code = 200)
+    public function __construct(
+        private MembershipTierService $membershipTierService
+    ) {}
+
+    // POST /api/membership-tiers
+    public function store(Request $request)
     {
-        return response()->json([
-            'code'    => $code,
-            'message' => $message,
-            'data'    => $data,
-        ], $code);
+        $data = $request->validate([
+            'name'          => 'required|string|max:255',
+            'minPoints'     => 'required|integer|min:0',
+            'discountType'  => 'required|string|in:PERCENTAGE,FIXED_AMOUNT',
+            'discountValue' => 'required|numeric|min:0.01',
+            'description'   => 'nullable|string',
+            'isActive'      => 'nullable|boolean',
+        ]);
+
+        $tier = $this->membershipTierService->addMembershipTier($data);
+
+        return (new MembershipTierResource($tier))
+            ->response()
+            ->setStatusCode(201);
+    }
+
+    // PUT /api/membership-tiers/{id}
+    public function update(string $id, Request $request)
+    {
+        $data = $request->validate([
+            'name'          => 'nullable|string|max:255',
+            'minPoints'     => 'nullable|integer|min:0',
+            'discountType'  => 'nullable|string|in:PERCENTAGE,FIXED_AMOUNT',
+            'discountValue' => 'nullable|numeric|min:0.01',
+            'description'   => 'nullable|string',
+            'isActive'      => 'nullable|boolean',
+        ]);
+
+        $tier = $this->membershipTierService->updateMembershipTier($id, $data);
+
+        return new MembershipTierResource($tier);
+    }
+
+    // PATCH /api/membership-tiers/{id}/deactivate
+    public function deactivate(string $id)
+    {
+        $this->membershipTierService->deactivateMembershipTier($id);
+
+        return response()->json(null, 204);
+    }
+
+    // DELETE /api/membership-tiers/{id}
+    public function destroy(string $id)
+    {
+        $this->membershipTierService->deleteMembershipTier($id);
+
+        return response()->json(null, 204);
+    }
+
+    // GET /api/membership-tiers/{id}
+    public function show(string $id)
+    {
+        $tier = $this->membershipTierService->getMembershipTier($id);
+
+        return new MembershipTierResource($tier);
+    }
+
+    // GET /api/membership-tiers/name/{name}
+    public function getByName(string $name)
+    {
+        $tier = $this->membershipTierService->getMembershipTierByName($name);
+
+        return new MembershipTierResource($tier);
+    }
+
+    // GET /api/membership-tiers
+    public function index()
+    {
+        $tiers = $this->membershipTierService->getAllMembershipTiers();
+
+        return MembershipTierResource::collection($tiers);
     }
 
     // GET /api/membership-tiers/active
-    public function getActiveTiers()
+    public function getActive()
     {
-        $tiers = MembershipTier::where('is_active', true)
-            ->orderBy('min_points')
-            ->get()
-            ->map(function (MembershipTier $tier) {
-                return [
-                    'membershipTierId' => $tier->tier_id,
-                    'name'             => $tier->name,
-                    'minPoints'        => $tier->min_points,
-                    'discountType'     => $tier->discount_type,
-                    'discountValue'    => $tier->discount_value,
-                    'description'      => $tier->description,
-                    'isActive'         => $tier->is_active,
-                    'createdAt'        => $tier->created_at,
-                    'updatedAt'        => $tier->updated_at,
-                ];
-            });
+        $tiers = $this->membershipTierService->getActiveMembershipTiers();
 
-        return $this->respond($tiers);
+        return MembershipTierResource::collection($tiers);
     }
 }

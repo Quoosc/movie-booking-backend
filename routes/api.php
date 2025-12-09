@@ -142,8 +142,17 @@ Route::middleware('auth.jwt')->group(function () {
 
     // ----- MEMBERSHIP TIERS -----
     Route::prefix('membership-tiers')->group(function () {
-        // GET /api/membership-tiers/active
-        Route::get('/active', [MembershipTierController::class, 'getActiveTiers']);
+        // LIST + GET
+        Route::get('/', [MembershipTierController::class, 'index']);              // GET /api/membership-tiers
+        Route::get('/active', [MembershipTierController::class, 'getActive']);   // GET /api/membership-tiers/active
+        Route::get('/name/{name}', [MembershipTierController::class, 'getByName']); // GET /name/{name}
+        Route::get('/{id}', [MembershipTierController::class, 'show']);          // GET /{id}
+
+        // ADMIN CRUD
+        Route::post('/', [MembershipTierController::class, 'store']);            // POST
+        Route::put('/{id}', [MembershipTierController::class, 'update']);        // PUT
+        Route::patch('/{id}/deactivate', [MembershipTierController::class, 'deactivate']); // PATCH
+        Route::delete('/{id}', [MembershipTierController::class, 'destroy']);    // DELETE
     });
 
     // ----- BOOKINGS (history + detail) -----

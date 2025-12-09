@@ -1,25 +1,25 @@
 <?php
 
+// app/Models/MembershipTier.php
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 
 class MembershipTier extends Model
 {
-    use HasFactory;
+    use HasFactory, HasUuids;
 
     protected $table = 'membership_tiers';
-    protected $primaryKey = 'tier_id';
+    protected $primaryKey = 'membership_tier_id';
     public $incrementing = false;
     protected $keyType = 'string';
 
     protected $fillable = [
-        'tier_id',
         'name',
         'min_points',
-        'discount_type',
+        'discount_type',   // PERCENTAGE | FIXED_AMOUNT
         'discount_value',
         'description',
         'is_active',
@@ -27,25 +27,12 @@ class MembershipTier extends Model
 
     protected $casts = [
         'min_points'     => 'integer',
-        'discount_value' => 'float',
+        'discount_value' => 'decimal:2',
         'is_active'      => 'boolean',
-        'created_at'     => 'datetime',
-        'updated_at'     => 'datetime',
     ];
-
-    protected static function boot()
-    {
-        parent::boot();
-
-        static::creating(function (MembershipTier $tier) {
-            if (!$tier->tier_id) {
-                $tier->tier_id = (string) Str::uuid();
-            }
-        });
-    }
 
     public function users()
     {
-        return $this->hasMany(User::class, 'membership_tier_id', 'tier_id');
+        return $this->hasMany(User::class, 'membership_tier_id', 'membership_tier_id');
     }
 }

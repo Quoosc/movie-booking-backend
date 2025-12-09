@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('membership_tiers', function (Blueprint $table) {
-            $table->uuid('tier_id')->primary();
+            $table->uuid('membership_tier_id')->primary();
             $table->string('name'); // SILVER, GOLD, PLATINUM
             $table->integer('min_points');
 
