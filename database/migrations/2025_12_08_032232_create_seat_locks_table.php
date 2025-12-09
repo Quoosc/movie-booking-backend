@@ -1,5 +1,5 @@
 <?php
-
+// database/migrations/2025_12_08_032232_create_seat_locks_table.php
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;

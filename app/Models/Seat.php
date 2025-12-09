@@ -1,5 +1,5 @@
 <?php
-
+// app/Models/Seat.php
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -37,4 +37,8 @@ class Seat extends Model
     {
         return $this->belongsTo(Room::class, 'room_id', 'room_id');
     }
+    // public function showtimeSeats()
+    // {
+    //     return $this->hasMany(ShowtimeSeat::class, 'seat_id', 'seat_id');
+    // }
 }

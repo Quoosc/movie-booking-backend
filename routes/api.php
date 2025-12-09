@@ -10,6 +10,8 @@ use App\Http\Controllers\BookingController;
 use App\Http\Controllers\MovieController;
 use App\Http\Controllers\CinemaController;
 use App\Http\Controllers\SeatController;
+use App\Http\Controllers\ShowtimeController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -95,6 +97,18 @@ Route::prefix('cinemas')->group(function () {
 });
 
 
+// ========== PUBLIC / BROWSING: SHOWTIMES ==========
+Route::prefix('showtimes')->group(function () {
+    Route::get('/', [ShowtimeController::class, 'index']);
+    Route::get('/{showtimeId}', [ShowtimeController::class, 'show']);
+    Route::get('/movie/{movieId}', [ShowtimeController::class, 'byMovie']);
+    Route::get('/movie/{movieId}/upcoming', [ShowtimeController::class, 'upcomingByMovie']);
+    Route::get('/movie/{movieId}/date-range', [ShowtimeController::class, 'byMovieAndDateRange']);
+    Route::get('/room/{roomId}', [ShowtimeController::class, 'byRoom']);
+});
+
+
+
 // ========== CÁC ROUTE CẦN ĐĂNG NHẬP (USER, BOOKING, ADMIN MOVIE, SEAT) ==========
 Route::middleware('auth.jwt')->group(function () {
 
@@ -140,5 +154,12 @@ Route::middleware('auth.jwt')->group(function () {
 
         // GET /api/seats/row-labels?rows=10
         Route::get('/row-labels', [SeatController::class, 'rowLabels']);
+    });
+
+    // ========== ADMIN: SHOWTIMES ==========
+    Route::prefix('showtimes')->group(function () {
+        Route::post('/', [ShowtimeController::class, 'store']);
+        Route::put('/{showtimeId}', [ShowtimeController::class, 'update']);
+        Route::delete('/{showtimeId}', [ShowtimeController::class, 'destroy']);
     });
 });

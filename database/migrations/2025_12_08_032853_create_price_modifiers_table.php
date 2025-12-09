@@ -1,5 +1,5 @@
 <?php
-
+// database/migrations/2025_12_08_032853_create_price_modifiers_table.php
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
