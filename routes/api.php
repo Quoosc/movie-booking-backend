@@ -16,6 +16,7 @@ use App\Http\Controllers\TicketTypeController;
 use App\Http\Controllers\ShowtimeTicketTypeController;
 use App\Http\Controllers\PriceBaseController;
 use App\Http\Controllers\PriceModifierController;
+use App\Http\Controllers\PromotionController;
 
 
 
@@ -118,6 +119,15 @@ Route::prefix('showtimes')->group(function () {
 Route::get('/ticket-types', [TicketTypeController::class, 'index']);
 
 
+// ========== PUBLIC: PROMOTIONS ==========
+Route::prefix('promotions')->group(function () {
+    Route::get('/', [PromotionController::class, 'index']);                // GET /api/promotions?filter=
+    Route::get('/active', [PromotionController::class, 'getActive']);      // GET /api/promotions/active
+    Route::get('/valid', [PromotionController::class, 'getValid']);        // GET /api/promotions/valid
+    Route::get('/code/{code}', [PromotionController::class, 'showByCode']); // GET /api/promotions/code/{code}
+    Route::get('/{promotionId}', [PromotionController::class, 'show']);    // GET /api/promotions/{id}
+});
+
 
 // ========== CÁC ROUTE CẦN ĐĂNG NHẬP (USER, BOOKING, ADMIN MOVIE, SEAT) ==========
 Route::middleware('auth.jwt')->group(function () {
@@ -210,5 +220,13 @@ Route::middleware('auth.jwt')->group(function () {
         Route::get('/{id}', [PriceModifierController::class, 'show']);    // GET /api/price-modifiers/{id}
         Route::put('/{id}', [PriceModifierController::class, 'update']);  // PUT /api/price-modifiers/{id}
         Route::delete('/{id}', [PriceModifierController::class, 'destroy']); // DELETE /api/price-modifiers/{id}
+    });
+
+    // ===== ADMIN: PROMOTIONS =====
+    Route::prefix('promotions')->group(function () {
+        Route::post('/', [PromotionController::class, 'store']);                      // POST /api/promotions
+        Route::put('/{promotionId}', [PromotionController::class, 'update']);         // PUT /api/promotions/{id}
+        Route::patch('/{promotionId}/deactivate', [PromotionController::class, 'deactivate']); // PATCH /api/promotions/{id}/deactivate
+        Route::delete('/{promotionId}', [PromotionController::class, 'destroy']);     // DELETE /api/promotions/{id}
     });
 });
