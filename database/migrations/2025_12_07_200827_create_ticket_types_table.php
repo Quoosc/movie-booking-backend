@@ -23,7 +23,7 @@ return new class extends Migration
             $table->decimal('modifier_value', 10, 2)->default(0);
 
             $table->boolean('active')->default(true);
-            $table->integer('sorted_order')->default(0);
+            $table->integer('sort_order')->default(0);
 
             // created_at, updated_at
             $table->timestamps();

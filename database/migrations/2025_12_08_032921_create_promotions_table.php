@@ -16,7 +16,7 @@ return new class extends Migration
             $table->text('description')->nullable();  // mô tả
 
             // Enum DiscountType { PERCENT, FIXED_AMOUNT }
-            $table->enum('discount_type', ['PERCENT', 'FIXED_AMOUNT']);
+            $table->enum('discount_type', ['PERCENTAGE', 'FIXED_AMOUNT']);
             $table->decimal('discount_value', 10, 2);
 
             $table->dateTime('start_date');

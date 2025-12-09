@@ -14,7 +14,7 @@ return new class extends Migration
             $table->integer('min_points');
 
             // discount_type: PERCENT / FIXED_AMOUNT / null
-            $table->enum('discount_type', ['PERCENT', 'FIXED_AMOUNT'])->nullable();
+            $table->enum('discount_type', ['PERCENTAGE', 'FIXED_AMOUNT'])->nullable();
             $table->decimal('discount_value', 10, 2)->nullable();
 
             $table->string('description')->nullable();
