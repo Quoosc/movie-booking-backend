@@ -1,5 +1,5 @@
 <?php
-
+// app/Http/Controllers/CinemaController.php
 namespace App\Http\Controllers;
 
 use App\Http\Resources\CinemaResource;
@@ -12,9 +12,19 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
+use App\Http\Resources\SnackResource;
+use App\Services\CinemaService;
+
 
 class CinemaController extends Controller
 {
+    private CinemaService $cinemaService;
+
+    public function __construct(CinemaService $cinemaService)
+    {
+        $this->cinemaService = $cinemaService;
+    }
+
     // ======= COMMON RESPONSE (giống AuthController, MovieController) =======
     protected function respond($data = null, string $message = 'OK', int $code = 200)
     {
@@ -248,5 +258,77 @@ class CinemaController extends Controller
         $room->delete();
 
         return $this->respond(null, 'Room deleted');
+    }
+
+
+    // =============== SNACKS ===============
+
+    // POST /api/cinemas/snacks
+    public function storeSnack(Request $request)
+    {
+        $data = $request->validate([
+            'cinemaId'          => 'required|uuid|exists:cinemas,cinema_id',
+            'name'              => 'required|string|max:255',
+            'description'       => 'nullable|string',
+            'price'             => 'required|numeric|min:0',
+            'type'              => 'required|string|max:255',
+            'imageUrl'          => 'nullable|string',
+            'imageCloudinaryId' => 'nullable|string',
+        ]);
+
+        $snack = $this->cinemaService->addSnack($data);
+
+        return (new SnackResource($snack))
+            ->response()
+            ->setStatusCode(201);
+    }
+
+    // PUT /api/cinemas/snacks/{snackId}
+    public function updateSnack(string $snackId, Request $request)
+    {
+        $data = $request->validate([
+            'name'              => 'sometimes|string|max:255',
+            'description'       => 'sometimes|nullable|string',
+            'price'             => 'sometimes|numeric|min:0',
+            'type'              => 'sometimes|string|max:255',
+            'imageUrl'          => 'sometimes|nullable|string',
+            'imageCloudinaryId' => 'sometimes|nullable|string',
+        ]);
+
+        $snack = $this->cinemaService->updateSnack($snackId, $data);
+
+        return new SnackResource($snack);
+    }
+
+    // DELETE /api/cinemas/snacks/{snackId}
+    public function deleteSnack(string $snackId)
+    {
+        $this->cinemaService->deleteSnack($snackId);
+
+        return response()->json(null, 200);
+    }
+
+    // GET /api/cinemas/snacks/{snackId}
+    public function getSnack(string $snackId)
+    {
+        $snack = $this->cinemaService->getSnack($snackId);
+
+        return new SnackResource($snack);
+    }
+
+    // GET /api/cinemas/snacks  (admin list tất cả snack)
+    public function getAllSnacks()
+    {
+        $snacks = $this->cinemaService->getAllSnacks();
+
+        return SnackResource::collection($snacks);
+    }
+
+    // GET /api/cinemas/{cinemaId}/snacks  (public dùng cho booking)
+    public function getSnacksByCinema(string $cinemaId)
+    {
+        $snacks = $this->cinemaService->getSnacksByCinema($cinemaId);
+
+        return SnackResource::collection($snacks);
     }
 }

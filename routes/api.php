@@ -20,7 +20,6 @@ use App\Http\Controllers\PromotionController;
 
 
 
-
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -61,42 +60,32 @@ Route::prefix('movies')->group(function () {
 
 // ========== PUBLIC + ADMIN: CINEMAS ==========
 Route::prefix('cinemas')->group(function () {
-    // ===== PUBLIC =====
-    // GET /api/cinemas
+    // PUBLIC
     Route::get('/', [CinemaController::class, 'index']);
-
-    // GET /api/cinemas/{cinemaId}/movies?status=SHOWING
     Route::get('/{cinemaId}/movies', [CinemaController::class, 'moviesByCinema']);
+    Route::get('/{cinemaId}/snacks', [CinemaController::class, 'getSnacksByCinema']);
 
     // ===== ADMIN (cần token, dùng auth.jwt) =====
     Route::middleware('auth.jwt')->group(function () {
 
-        // --- ROOMS ---
-        // GET /api/cinemas/rooms?cinemaId=...
+        // ROOMS
         Route::get('/rooms', [CinemaController::class, 'roomsIndex']);
-
-        // POST /api/cinemas/rooms
         Route::post('/rooms', [CinemaController::class, 'storeRoom']);
-
         Route::get('/rooms/{roomId}', [CinemaController::class, 'showRoom']);
-
-        Route::get('/{cinemaId}/movies', [CinemaController::class, 'moviesByCinema']);
-
-        // PUT /api/cinemas/rooms/{roomId}
         Route::put('/rooms/{roomId}', [CinemaController::class, 'updateRoom']);
-
-        // DELETE /api/cinemas/rooms/{roomId}
         Route::delete('/rooms/{roomId}', [CinemaController::class, 'destroyRoom']);
 
-        // --- CINEMAS CRUD ---
-        // POST /api/cinemas
+        // CINEMAS CRUD
         Route::post('/', [CinemaController::class, 'store']);
-
-        // PUT /api/cinemas/{cinemaId}
         Route::put('/{cinemaId}', [CinemaController::class, 'update']);
-
-        // DELETE /api/cinemas/{cinemaId}
         Route::delete('/{cinemaId}', [CinemaController::class, 'destroy']);
+
+        // SNACKS ADMIN
+        Route::post('/snacks', [CinemaController::class, 'storeSnack']);
+        Route::put('/snacks/{snackId}', [CinemaController::class, 'updateSnack']);
+        Route::delete('/snacks/{snackId}', [CinemaController::class, 'deleteSnack']);
+        Route::get('/snacks/{snackId}', [CinemaController::class, 'getSnack']);
+        Route::get('/snacks', [CinemaController::class, 'getAllSnacks']);
     });
 
     // Đặt SAU cùng để không nuốt /rooms

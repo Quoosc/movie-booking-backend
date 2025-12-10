@@ -10,8 +10,8 @@ return new class extends Migration
     {
         Schema::create('snacks', function (Blueprint $table) {
             $table->uuid('snack_id')->primary();
-
             $table->uuid('cinema_id');
+            
             $table->string('name');
             $table->string('type', 50); // popcorn, drink, combo
 
