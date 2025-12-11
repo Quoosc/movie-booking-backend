@@ -35,12 +35,23 @@ class SeatLockController extends Controller
         $user = $request->user();
         $sessionId = $request->header('X-Session-Id');
 
-        $sessionContext = new SessionContext(
-            userId: $user?->user_id,
-            sessionId: $sessionId
+        $sessionContext = $user 
+            ? SessionContext::forUser($user->user_id)
+            : ($sessionId ? SessionContext::forGuest($sessionId) : null);
+
+        if (!$sessionContext) {
+            return response()->json([
+                'code' => 401,
+                'message' => 'Authentication required: provide JWT token or X-Session-Id header',
+            ], 401);
+        }
+
+        $dto = new \App\DTO\Bookings\LockSeatsRequest(
+            showtimeId: $data['showtimeId'],
+            seats: $data['seats']
         );
 
-        $result = $this->bookingService->lockSeats($data, $sessionContext);
+        $result = $this->bookingService->lockSeats($dto, $sessionContext);
 
         return response()->json([
             'code'    => 200,
@@ -50,9 +61,19 @@ class SeatLockController extends Controller
     }
 
     // GET /api/seat-locks/availability/showtime/{showtimeId}
-    public function checkAvailability(string $showtimeId)
+    public function checkAvailability(string $showtimeId, Request $request)
     {
-        $result = $this->bookingService->checkAvailability($showtimeId);
+        $user = $request->user();
+        $sessionId = $request->header('X-Session-Id');
+
+        $sessionContext = null;
+        if ($user) {
+            $sessionContext = SessionContext::forUser($user->user_id);
+        } elseif ($sessionId) {
+            $sessionContext = SessionContext::forGuest($sessionId);
+        }
+
+        $result = $this->bookingService->checkAvailability($showtimeId, $sessionContext);
 
         return $this->respond($result);
     }

@@ -20,9 +20,104 @@ class CheckoutLifecycleService
         protected Payment     $paymentModel,
         protected ShowtimeSeat $showtimeSeatModel,
         protected UserService $userService,
+        protected BookingService $bookingService,
+        protected PayPalService $paypalService,
+        protected MomoService $momoService,
         // dùng Lazy như Java: tránh vòng lặp dependency giữa RefundService & CheckoutLifecycleService
         protected RefundService $refundService,
     ) {}
+
+    /**
+     * POST /checkout
+     * Atomically validates seat locks, creates pending booking, and initiates payment
+     */
+    public function checkout(array $data, \App\DTO\SessionContext $sessionContext): array
+    {
+        return DB::transaction(function () use ($data, $sessionContext) {
+            $lockId = $data['lockId'];
+            $paymentMethod = $data['paymentMethod'];
+            $promotionCode = $data['promotionCode'] ?? null;
+            $snackCombos = $data['snackCombos'] ?? [];
+            $guestInfo = $data['guestInfo'] ?? null;
+
+            // 1. Validate lock
+            $lockData = app(RedisLockService::class)->getLockData($lockId);
+            if (!$lockData) {
+                throw new \App\Exceptions\CustomException('Lock not found or expired', 404);
+            }
+
+            // 2. Create/get user
+            $user = null;
+            if ($sessionContext->isUser()) {
+                $user = \App\Models\User::find($sessionContext->userId);
+            } elseif ($guestInfo) {
+                $user = $this->createGuestUser($guestInfo);
+            }
+
+            if (!$user) {
+                throw new \App\Exceptions\CustomException('User information required', 400);
+            }
+
+            // 3. Create booking
+            $booking = $this->createBookingFromLock($lockData, $user->user_id, $promotionCode, $snackCombos);
+
+            // 4. Initiate payment
+            $paymentResult = $this->initiatePayment($booking, $paymentMethod);
+
+            // 5. Release lock
+            $showtimeId = $lockData['showtimeId'];
+            $seatIds = $lockData['seatIds'] ?? [];
+            if (!empty($seatIds)) {
+                $lockToken = $lockData['lockToken'] ?? $lockId;
+                app(RedisLockService::class)->releaseMultipleSeatsLock($showtimeId, $seatIds, $lockToken);
+            }
+
+            return [
+                'bookingId' => $booking->booking_id,
+                'paymentId' => $paymentResult['paymentId'],
+                'paymentMethod' => $paymentMethod,
+                'redirectUrl' => $paymentResult['redirectUrl'],
+                'message' => 'Booking confirmed and payment initiated'
+            ];
+        });
+    }
+
+    private function getLockDataFromRedis(string $lockId): ?array
+    {
+        return app(RedisLockService::class)->getLockData($lockId);
+    }
+
+    private function createGuestUser(array $guestInfo)
+    {
+        $user = new \App\Models\User();
+        $user->user_id = \Illuminate\Support\Str::uuid()->toString();
+        $user->username = $guestInfo['username'];
+        $user->email = $guestInfo['email'];
+        $user->phone_number = $guestInfo['phoneNumber'] ?? null;
+        $user->role = 'GUEST';
+        $user->password = bcrypt(\Illuminate\Support\Str::random(32));
+        $user->save();
+        return $user;
+    }
+
+    private function createBookingFromLock(array $lockData, string $userId, ?string $promotionCode, array $snackCombos)
+    {
+        // Placeholder - cần implement đầy đủ
+        throw new \App\Exceptions\CustomException(
+            'createBookingFromLock() needs full implementation',
+            501
+        );
+    }
+
+    private function initiatePayment(Booking $booking, string $paymentMethod): array
+    {
+        // Placeholder - trả về mock data
+        // Trong thực tế cần gọi PayPal/Momo service
+        return [
+            'paymentId' => \Illuminate\Support\Str::uuid()->toString(),
+            'redirectUrl' => 'https://payment-gateway.example.com/pay?token=xxx'
+        ];
+    }
 
     /**
      * Payment gateway báo thành công (PayPal/Momo).

@@ -149,4 +149,69 @@ class RedisLockService
     {
         return (string) Str::uuid();
     }
+
+    /**
+     * Lấy dữ liệu lock từ lockId
+     */
+    public function getLockData(string $lockId): ?array
+    {
+        try {
+            $key = 'lock:data:' . $lockId;
+            $data = Redis::get($key);
+            if ($data) {
+                return json_decode($data, true);
+            }
+            return null;
+        } catch (\Throwable $e) {
+            Log::error("Error getting lock data: {$lockId}", ['exception' => $e]);
+            return null;
+        }
+    }
+
+    /**
+     * Lưu dữ liệu lock
+     */
+    public function storeLockData(string $lockId, array $data, int $ttlSeconds): bool
+    {
+        try {
+            $key = 'lock:data:' . $lockId;
+            return Redis::setex($key, $ttlSeconds, json_encode($data));
+        } catch (\Throwable $e) {
+            Log::error("Error storing lock data: {$lockId}", ['exception' => $e]);
+            return false;
+        }
+    }
+
+    /**
+     * Lấy availability cho showtime
+     */
+    public function getAvailabilityForShowtime(string $showtimeId): array
+    {
+        // Trả về danh sách ghế available, locked, booked
+        // TODO: Implement logic thực tế
+        return [
+            'showtimeId' => $showtimeId,
+            'availableSeats' => [],
+            'lockedSeats' => [],
+            'bookedSeats' => [],
+            'message' => 'Feature under development'
+        ];
+    }
+
+    /**
+     * Giải phóng tất cả lock cho showtime
+     */
+    public function releaseAllLocksForShowtime(string $showtimeId): void
+    {
+        try {
+            $pattern = self::SEAT_LOCK_PREFIX . $showtimeId . ':*';
+            $keys = Redis::keys($pattern);
+            if (!empty($keys)) {
+                Redis::del(...$keys);
+                Log::info("Released all locks for showtime: {$showtimeId}");
+            }
+        } catch (\Throwable $e) {
+            Log::error("Error releasing all locks for showtime: {$showtimeId}", ['exception' => $e]);
+        }
+    }
 }

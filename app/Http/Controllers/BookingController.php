@@ -242,16 +242,17 @@ class BookingController extends Controller
     public function pricePreview(Request $request)
     {
         $payload = $request->validate([
-            'lockKey'       => 'required|string',
+            'lockId'        => 'required|string',
             'promotionCode' => 'nullable|string',
             'snacks'        => 'array',
             'snacks.*.snackId'  => 'required_with:snacks|string|exists:snacks,snack_id',
             'snacks.*.quantity' => 'required_with:snacks|integer|min:1',
         ]);
 
-        $user = Auth::user();
+        $user = $request->user();
+        $sessionId = $request->header('X-Session-Id');
 
-        $result = $this->bookingService->calculatePricePreview($payload, $user);
+        $result = $this->bookingService->calculatePricePreview($payload, $user, $sessionId);
 
         return $this->respond($result);
     }
@@ -260,15 +261,21 @@ class BookingController extends Controller
     public function confirmBooking(Request $request)
     {
         $data = $request->validate([
-            'lockKey'       => 'required|string',
-            'customerName'  => 'required|string|max:255',
-            'customerEmail' => 'required|email|max:255',
-            'customerPhone' => 'required|string|max:30',
+            'lockId'        => 'required|string',
+            'promotionCode' => 'nullable|string',
+            'snackCombos'   => 'array',
+            'snackCombos.*.snackId'  => 'required_with:snackCombos|string|exists:snacks,snack_id',
+            'snackCombos.*.quantity' => 'required_with:snackCombos|integer|min:1',
+            'guestInfo'              => 'array',
+            'guestInfo.email'        => 'required_with:guestInfo|email|max:255',
+            'guestInfo.username'     => 'required_with:guestInfo|string|max:255',
+            'guestInfo.phoneNumber'  => 'required_with:guestInfo|string|max:30',
         ]);
 
-        $user = Auth::user();
+        $user = $request->user();
+        $sessionId = $request->header('X-Session-Id');
 
-        $result = $this->bookingService->confirmBooking($data, $user);
+        $result = $this->bookingService->confirmBooking($data, $user, $sessionId);
 
         return $this->respond($result, 'Booking confirmed', Response::HTTP_CREATED);
     }
@@ -299,10 +306,10 @@ class BookingController extends Controller
     public function updateQrCode(string $bookingId, Request $request)
     {
         $data = $request->validate([
-            'qrPayload' => 'required|string',
+            'qrCodeUrl' => 'required|string|url',
         ]);
 
-        $result = $this->bookingService->updateQrCode($bookingId, $data['qrPayload']);
+        $result = $this->bookingService->updateQrCode($bookingId, $data['qrCodeUrl']);
 
         return $this->respond($result, 'QR code updated');
     }

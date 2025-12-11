@@ -20,6 +20,9 @@ use App\Http\Controllers\PriceModifierController;
 use App\Http\Controllers\PromotionController;
 use App\Http\Controllers\Payments\PayPalController;
 use App\Http\Controllers\Payments\MomoController;
+use App\Http\Controllers\CheckoutController;
+use App\Http\Controllers\SeatLockController;
+use App\Http\Controllers\RefundController;
 
 /*
 |--------------------------------------------------------------------------
@@ -186,6 +189,9 @@ Route::middleware('auth.jwt')->group(function () {
         Route::get('/{bookingId}',              [BookingController::class, 'getBookingById']);
         Route::patch('/{bookingId}/qr',         [BookingController::class, 'updateQrCode']);
     });
+
+    // ====== CHECKOUT ======
+    Route::post('/checkout', [CheckoutController::class, 'checkout']);
 
 
     // ========== PAYMENTS (MOMO + PAYPAL + REFUND) ==========
