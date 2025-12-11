@@ -4,6 +4,7 @@ namespace App\Repositories;
 
 use App\Models\Booking;
 use Illuminate\Support\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class BookingRepository
 {
@@ -18,15 +19,16 @@ class BookingRepository
         ])->find($id);
     }
 
-    public function findByUserId(string $userId): Collection
+    public function findByUserId(string $userId, int $page = 1, int $perPage = 10): LengthAwarePaginator
     {
         return Booking::with([
+            'bookingSeats',
             'showtime.movie',
-            'showtime.room.cinema'
+            'showtime.cinema'
         ])
             ->where('user_id', $userId)
             ->orderBy('booked_at', 'desc')
-            ->get();
+            ->paginate($perPage, ['*'], 'page', $page);
     }
 
     public function findByIdAndUserId(string $bookingId, string $userId): ?Booking

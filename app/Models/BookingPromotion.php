@@ -15,11 +15,12 @@ class BookingPromotion extends Model
     protected $fillable = [
         'booking_id',
         'promotion_id',
-        'discount_value',
+        'discount_amount',
+        'applied_at',
     ];
 
     protected $casts = [
-        'discount_value' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
     ];
 
     public function booking()

@@ -22,6 +22,7 @@ use App\Http\Controllers\Payments\PayPalController;
 use App\Http\Controllers\Payments\MomoController;
 use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\SeatLockController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\RefundController;
 
 /*
@@ -170,6 +171,27 @@ Route::prefix('bookings')->group(function () {
 // ====== CHECKOUT ======
 Route::post('/checkout', [CheckoutController::class, 'confirmAndInitiate']);
 
+// ====== PAYMENTS ======
+Route::prefix('payments')->group(function () {
+    // Momo IPN callbacks (PUBLIC - no auth, signature verified in service)
+    Route::get('/momo/ipn', [PaymentController::class, 'handleMomoIpnGet']);
+    Route::post('/momo/ipn', [PaymentController::class, 'handleMomoIpnPost']);
+
+    // Payment operations (no auth required for initiation)
+    Route::post('/order', [PaymentController::class, 'initiatePayment']);
+    Route::post('/order/capture', [PaymentController::class, 'capturePayment']);
+
+    // Search payments (JWT required)
+    Route::middleware('auth.jwt')->group(function () {
+        Route::get('/search', [PaymentController::class, 'searchPayments']);
+    });
+
+    // Refund (ADMIN only)
+    Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
+        Route::post('/{paymentId}/refund', [RefundController::class, 'refund']);
+    });
+});
+
 // ======================================================================
 // CÁC ROUTE CẦN ĐĂNG NHẬP (USER, BOOKING, ADMIN ...)
 // ======================================================================
@@ -212,30 +234,18 @@ Route::middleware('auth.jwt')->group(function () {
     });
 
 
-    // ========== PAYMENTS (MOMO + PAYPAL + REFUND) ==========
+    // ========== GATEWAY-SPECIFIC PAYMENT ROUTES (Optional, for advanced use) ==========
     Route::prefix('payments')->group(function () {
-        // PAYPAL
+        // PAYPAL specific routes
         Route::prefix('paypal')->group(function () {
-            // POST /api/payments/paypal/create-order
             Route::post('create-order',  [PayPalController::class, 'createOrder']);
-            // POST /api/payments/paypal/capture-order
             Route::post('capture-order', [PayPalController::class, 'captureOrder']);
         });
 
-        // MOMO
+        // MOMO specific routes  
         Route::prefix('momo')->group(function () {
-            // POST /api/payments/momo/create-order
             Route::post('create-order', [MomoController::class, 'createOrder']);
-            // POST /api/payments/momo/ipn
-            Route::post('ipn',          [MomoController::class, 'ipn']);
-            // GET /api/payments/momo/verify?orderId=...
             Route::get('verify',        [MomoController::class, 'verifyPayment']);
-        });
-
-        // REFUND (admin)
-        Route::middleware('can:admin')->group(function () {
-            // POST /api/payments/{paymentId}/refund
-            Route::post('{paymentId}/refund', [RefundController::class, 'refund']);
         });
     });
 

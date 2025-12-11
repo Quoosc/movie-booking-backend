@@ -63,4 +63,12 @@ class User extends Authenticatable
     {
         return $this->hasMany(RefreshToken::class, 'user_id', 'user_id');
     }
+
+    /**
+     * Check if user has specific role (for RBAC middleware)
+     */
+    public function hasRole(string $role): bool
+    {
+        return strtoupper($this->role) === strtoupper($role);
+    }
 }

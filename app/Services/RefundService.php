@@ -48,7 +48,7 @@ class RefundService
 
         Log::info("Processing automatic refund for payment {$payment->id} due to: {$reason}");
 
-        if (!in_array($payment->status, [PaymentStatus::FAILED, PaymentStatus::SUCCESS], true)) {
+        if (!in_array($payment->status, [PaymentStatus::FAILED, PaymentStatus::COMPLETED], true)) {
             throw new CustomException(
                 "Cannot auto-refund payment with status: {$payment->status->value}",
                 Response::HTTP_BAD_REQUEST
@@ -67,7 +67,7 @@ class RefundService
             $payment->status = PaymentStatus::REFUND_PENDING;
             $payment->save();
 
-            $booking->status = BookingStatus::REFUND_PENDING;
+            $booking->status = BookingStatus::CANCELLED;
             $booking->save();
 
             /** @var Refund $refund */
@@ -111,7 +111,7 @@ class RefundService
         if ($booking->status !== BookingStatus::CONFIRMED) {
             throw new CustomException('Only confirmed bookings can be refunded', Response::HTTP_BAD_REQUEST);
         }
-        if ($payment->status !== PaymentStatus::SUCCESS) {
+        if ($payment->status !== PaymentStatus::COMPLETED) {
             throw new CustomException('Only successful payments can be refunded', Response::HTTP_BAD_REQUEST);
         }
         if ($booking->refunded) {

@@ -135,7 +135,7 @@ class CheckoutLifecycleService
             $booking = $payment->booking;
 
             if (
-                $payment->status === PaymentStatus::SUCCESS
+                $payment->status === PaymentStatus::COMPLETED
                 && $booking->status === BookingStatus::CONFIRMED
             ) {
                 Log::debug("Payment {$payment->id} already processed successfully");
@@ -158,7 +158,7 @@ class CheckoutLifecycleService
                 return $this->handleFailedPayment($payment, 'Gateway amount mismatch');
             }
 
-            $payment->status = PaymentStatus::SUCCESS;
+            $payment->status = PaymentStatus::COMPLETED;
             $payment->completed_at = Carbon::now();
             if ($gatewayTxnId) {
                 $payment->transaction_id = $gatewayTxnId;
@@ -192,7 +192,7 @@ class CheckoutLifecycleService
         return DB::transaction(function () use ($payment, $reason) {
             $booking = $payment->booking;
 
-            if ($payment->status === PaymentStatus::SUCCESS) {
+            if ($payment->status === PaymentStatus::COMPLETED) {
                 Log::warning("Attempted to mark payment {$payment->id} as failed after success");
                 return $payment;
             }
@@ -275,7 +275,7 @@ class CheckoutLifecycleService
 
                 $booking->save();
 
-                $payment->status = PaymentStatus::SUCCESS;
+                $payment->status = PaymentStatus::COMPLETED;
                 $payment->completed_at = Carbon::now();
                 if ($gatewayTxnId) {
                     $payment->transaction_id = $gatewayTxnId;
@@ -340,7 +340,7 @@ class CheckoutLifecycleService
                 $booking->loyalty_points_awarded = false;
             }
 
-            $booking->status = BookingStatus::REFUNDED;
+            $booking->status = BookingStatus::CANCELLED;
             $booking->refunded = true;
             $booking->refunded_at = Carbon::now();
             $booking->refund_reason = $refund->reason;
@@ -362,11 +362,11 @@ class CheckoutLifecycleService
         DB::transaction(function () use ($payment, $reason) {
             $booking = $payment->booking;
 
-            $payment->status = PaymentStatus::REFUND_FAILED;
+            $payment->status = PaymentStatus::FAILED;
             $payment->error_message = $reason;
             $payment->save();
 
-            if ($booking->status === BookingStatus::REFUND_PENDING) {
+            if ($booking->status === BookingStatus::CANCELLED) {
                 $booking->status = BookingStatus::CONFIRMED;
                 $booking->save();
             }

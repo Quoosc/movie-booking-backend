@@ -230,12 +230,20 @@ class BookingService
             );
 
             // Update showtime_seats status = AVAILABLE
-            $this->showtimeSeatRepository->updateStatusBatch($seatIds, SeatStatus::AVAILABLE->value);
+            $updatedCount = $this->showtimeSeatRepository->updateStatusBatch($seatIds, SeatStatus::AVAILABLE->value);
+
+            Log::info("Releasing seat locks", [
+                'showtime' => $showtimeId,
+                'owner' => $lockOwnerId,
+                'seatIds' => $seatIds,
+                'updatedCount' => $updatedCount,
+                'expectedCount' => count($seatIds)
+            ]);
 
             // Delete SeatLock record (cascade delete seatLockSeats)
             $this->seatLockRepository->delete($seatLock);
 
-            Log::info("Released seat lock for showtime: {$showtimeId}, owner: {$lockOwnerId}");
+            Log::info("Released seat lock successfully for showtime: {$showtimeId}, owner: {$lockOwnerId}");
         });
     }
 

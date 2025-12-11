@@ -12,6 +12,9 @@ class Booking extends Model
     use HasFactory, HasUuids;
 
     protected $table = 'bookings';
+    protected $primaryKey = 'booking_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
 
     protected $fillable = [
         'user_id',
@@ -57,21 +60,21 @@ class Booking extends Model
 
     public function bookingSeats()
     {
-        return $this->hasMany(BookingSeat::class);
+        return $this->hasMany(BookingSeat::class, 'booking_id', 'booking_id');
     }
 
     public function bookingSnacks()
     {
-        return $this->hasMany(BookingSnack::class);
+        return $this->hasMany(BookingSnack::class, 'booking_id', 'booking_id');
     }
 
     public function bookingPromotions()
     {
-        return $this->hasMany(BookingPromotion::class);
+        return $this->hasMany(BookingPromotion::class, 'booking_id', 'booking_id');
     }
 
     public function payments()
     {
-        return $this->hasMany(Payment::class);
+        return $this->hasMany(Payment::class, 'booking_id', 'booking_id');
     }
 }

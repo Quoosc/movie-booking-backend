@@ -42,6 +42,11 @@ class SessionContext
         return $this->lockOwnerType === LockOwnerType::GUEST;
     }
 
+    public function isUser(): bool
+    {
+        return $this->lockOwnerType === LockOwnerType::USER;
+    }
+
     public static function forUser(string $userId): self
     {
         return new self($userId, LockOwnerType::USER, $userId);

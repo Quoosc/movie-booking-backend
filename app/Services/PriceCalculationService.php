@@ -330,5 +330,95 @@ class PriceCalculationService
             default       => 0.0,
         };
     }
-}
 
+    /**
+     * Calculate total price với ticket type modifiers và promotions (Spring Boot spec compliant)
+     */
+    public function calculateTotalPrice(
+        Showtime $showtime,
+        \Illuminate\Support\Collection $showtimeSeats,
+        array $seatRequestData,
+        ?array $promotionIds = null
+    ): array {
+        $totalPrice = 0;
+        $seatPrices = [];
+
+        // Calculate base prices với ticket type modifiers
+        foreach ($seatRequestData as $seatData) {
+            $showtimeSeat = $showtimeSeats->firstWhere('showtime_seat_id', $seatData['showtimeSeatId']);
+            if (!$showtimeSeat) {
+                throw new \RuntimeException("Showtime seat not found: {$seatData['showtimeSeatId']}");
+            }
+
+            $ticketType = $this->getTicketType($seatData['ticketTypeId']);
+
+            // Base price = seat price * ticket type modifier
+            $basePrice = (float) $showtimeSeat->price;
+            $modifier = (float) $ticketType->price_modifier; // VD: 0.8 cho HSSV/U22
+            $finalPrice = $basePrice * $modifier;
+
+            $totalPrice += $finalPrice;
+            $seatPrices[] = [
+                'showtimeSeatId' => $seatData['showtimeSeatId'],
+                'ticketTypeId' => $seatData['ticketTypeId'],
+                'basePrice' => $basePrice,
+                'modifier' => $modifier,
+                'finalPrice' => $finalPrice
+            ];
+        }
+
+        // Apply promotions
+        $discountAmount = 0;
+        $discountReason = null;
+        $appliedPromotions = [];
+
+        if ($promotionIds && count($promotionIds) > 0) {
+            $promotions = $this->getValidPromotions($promotionIds, $showtime->showtime_id);
+
+            foreach ($promotions as $promotion) {
+                $discount = $this->calculatePromotionDiscountAmount($promotion, $totalPrice);
+                $discountAmount += $discount;
+                $appliedPromotions[] = [
+                    'promotionId' => $promotion->promotion_id,
+                    'discountAmount' => $discount
+                ];
+            }
+
+            $discountReason = implode(', ', $promotions->pluck('name')->toArray());
+        }
+
+        $finalPrice = max(0, $totalPrice - $discountAmount);
+
+        return [
+            'totalPrice' => $totalPrice,
+            'discountAmount' => $discountAmount,
+            'discountReason' => $discountReason,
+            'finalPrice' => $finalPrice,
+            'seatPrices' => $seatPrices,
+            'appliedPromotions' => $appliedPromotions
+        ];
+    }
+
+    private function getTicketType(string $ticketTypeId)
+    {
+        return \App\Models\TicketType::findOrFail($ticketTypeId);
+    }
+
+    private function getValidPromotions(array $promotionIds, string $showtimeId): \Illuminate\Support\Collection
+    {
+        return Promotion::whereIn('promotion_id', $promotionIds)
+            ->where('is_active', true)
+            ->where('start_date', '<=', now())
+            ->where('end_date', '>=', now())
+            ->get();
+    }
+
+    private function calculatePromotionDiscountAmount($promotion, float $totalPrice): float
+    {
+        if ($promotion->discount_type === 'PERCENTAGE') {
+            return $totalPrice * ($promotion->discount_value / 100);
+        }
+
+        return $promotion->discount_value; // FIXED amount
+    }
+}

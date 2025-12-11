@@ -18,6 +18,7 @@ class BookingSeat extends Model
     protected $fillable = [
         'booking_id',
         'showtime_seat_id',
+        'seat_lock_seat_id',
         'ticket_type_id',
         'price',
     ];

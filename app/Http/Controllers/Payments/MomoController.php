@@ -37,9 +37,12 @@ class MomoController extends Controller
     // POST /api/payments/momo/ipn
     public function ipn(Request $request)
     {
-        $this->momoService->handleIpn($request->all());
-        // Momo thường không cần body JSON đặc biệt
-        return response()->json(['result' => 0, 'message' => 'OK']);
+        $response = $this->momoService->processIpn($request->all());
+
+        return response()->json([
+            'resultCode' => $response->resultCode,
+            'message' => $response->message,
+        ]);
     }
 
     // GET /api/payments/momo/verify?orderId=...

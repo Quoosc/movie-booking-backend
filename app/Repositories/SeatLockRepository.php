@@ -8,6 +8,11 @@ use Carbon\Carbon;
 
 class SeatLockRepository
 {
+    public function create(array $data): SeatLock
+    {
+        return SeatLock::create($data);
+    }
+
     public function findById(string $id): ?SeatLock
     {
         return SeatLock::with(['seatLockSeats.showtimeSeat.seat', 'showtime'])
@@ -48,8 +53,10 @@ class SeatLockRepository
         $seatLock->delete();
     }
 
-    public function deleteExpiredLocks(): int
+    public function findExpiredLocks(): Collection
     {
-        return SeatLock::where('expires_at', '<', Carbon::now())->delete();
+        return SeatLock::where('expires_at', '<=', Carbon::now())
+            ->with('seatLockSeats')
+            ->get();
     }
 }

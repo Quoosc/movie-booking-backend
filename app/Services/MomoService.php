@@ -84,7 +84,7 @@ class MomoService
             // PENDING payment reuse / create
             /** @var Payment|null $existing */
             $existing = $this->paymentModel->newQuery()
-                ->where('booking_id', $booking->id)
+                ->where('booking_id', $booking->booking_id)
                 ->where('method', PaymentMethod::MOMO)
                 ->where('status', PaymentStatus::PENDING)
                 ->first();
@@ -97,12 +97,14 @@ class MomoService
             $payment->gateway_amount = $request->amount;
             $payment->exchange_rate = 1;
             $payment->amount = $request->amount;
-            $payment->booking_id = $booking->id;
+            $payment->booking_id = $booking->booking_id;
+            $payment->user_id = $booking->user_id;
+            $payment->created_at = now();
             $payment->save();
 
-            $orderId = (string) $payment->id;
+            $orderId = (string) $payment->payment_id;
             $requestId = $orderId;
-            $orderInfo = 'Booking ' . $booking->id;
+            $orderInfo = 'Booking ' . $booking->booking_id;
             $amountStr = (string) (int) $request->amount; // VND nguyên
             $requestType = 'captureWallet';
             $extraData = '';
@@ -155,7 +157,7 @@ class MomoService
                 $payment->transaction_id = $orderId;
                 $payment->save();
 
-                Log::info("Momo payment created successfully for booking {$booking->id}");
+                Log::info("Momo payment created successfully for booking {$booking->booking_id}");
 
                 return new InitiatePaymentResponse(
                     paymentId: $payment->id,
@@ -236,7 +238,7 @@ class MomoService
             return IpnResponse::amountInvalid();
         }
 
-        if ($payment->status === PaymentStatus::SUCCESS) {
+        if ($payment->status === PaymentStatus::COMPLETED) {
             Log::info("Momo IPN: Payment {$payment->id} already confirmed");
             return IpnResponse::orderAlreadyConfirmed();
         }
@@ -285,7 +287,7 @@ class MomoService
                 throw new CustomException('Payment method is not Momo', Response::HTTP_BAD_REQUEST);
             }
 
-            if ($payment->status !== PaymentStatus::SUCCESS) {
+            if ($payment->status !== PaymentStatus::COMPLETED) {
                 throw new CustomException('Only successful payments can be refunded', Response::HTTP_BAD_REQUEST);
             }
 

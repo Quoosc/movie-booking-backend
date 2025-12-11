@@ -112,31 +112,107 @@ class RedisLockService
     }
 
     /**
+     * Acquire locks cho nhiều ghế (Spring Boot spec compliant)
+     * Return true nếu acquire tất cả locks thành công
+     */
+    public function acquireSeatsLock(string $showtimeId, array $seatIds, string $lockToken, int $ttl): bool
+    {
+        $allAcquired = true;
+        $acquiredKeys = [];
+
+        foreach ($seatIds as $seatId) {
+            $lockKey = "seat-lock:{$showtimeId}:{$seatId}";
+
+            // SET NX EX - Set if not exists with expiration
+            $acquired = $this->acquireLock($lockKey, $lockToken, $ttl);
+
+            if (!$acquired) {
+                $allAcquired = false;
+                break;
+            }
+
+            $acquiredKeys[] = $lockKey;
+        }
+
+        // Nếu không acquire được tất cả, release những lock đã acquire
+        if (!$allAcquired) {
+            foreach ($acquiredKeys as $key) {
+                $this->releaseLock($key, $lockToken);
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Release nhiều locks (Spring Boot spec compliant)
+     */
+    public function releaseSeatsLock(string $showtimeId, array $seatIds, string $lockToken): void
+    {
+        foreach ($seatIds as $seatId) {
+            $lockKey = "seat-lock:{$showtimeId}:{$seatId}";
+            $this->releaseLock($lockKey, $lockToken);
+        }
+    }
+
+    /**
+     * Check xem ghế có bị lock không (Spring Boot spec compliant)
+     */
+    public function isSeatLocked(string $showtimeId, string $seatId): bool
+    {
+        $lockKey = "seat-lock:{$showtimeId}:{$seatId}";
+        return Redis::exists($lockKey) > 0;
+    }
+
+    /**
      * Lock nhiều ghế atomically
+     * Return true nếu acquire TẤT CẢ locks thành công
      */
     public function acquireMultipleSeatsLock(string $showtimeId, iterable $seatIds, string $lockToken, int $ttlSeconds): bool
     {
-        // check trước
-        foreach ($seatIds as $seatId) {
-            $seatKey = $this->generateSeatLockKey($showtimeId, $seatId);
-            if ($this->isLocked($seatKey)) {
-                Log::warning("Seat already locked: {$seatId} for showtime: {$showtimeId}");
-                return false;
-            }
-        }
+        $acquiredKeys = [];
 
-        // acquire tất cả
-        $allLocked = true;
-        foreach ($seatIds as $seatId) {
-            $seatKey = $this->generateSeatLockKey($showtimeId, $seatId);
-            if (!$this->acquireLock($seatKey, $lockToken, $ttlSeconds)) {
-                $this->rollbackSeatLocks($showtimeId, $seatIds, $lockToken);
-                $allLocked = false;
-                break;
-            }
-        }
+        try {
+            // Thử acquire từng seat
+            foreach ($seatIds as $seatId) {
+                $seatKey = $this->generateSeatLockKey($showtimeId, $seatId);
 
-        return $allLocked;
+                // Thử acquire lock (atomic operation)
+                if (!$this->acquireLock($seatKey, $lockToken, $ttlSeconds)) {
+                    Log::warning("Failed to acquire lock for seat: {$seatId} in showtime: {$showtimeId}");
+
+                    // Rollback tất cả locks đã acquire
+                    foreach ($acquiredKeys as $key) {
+                        $this->releaseLock($key, $lockToken);
+                    }
+
+                    return false;
+                }
+
+                $acquiredKeys[] = $seatKey;
+            }
+
+            Log::info("Successfully acquired locks for " . count($acquiredKeys) . " seats", [
+                'showtime' => $showtimeId,
+                'lockToken' => $lockToken
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error("Exception while acquiring multiple seat locks", [
+                'showtime' => $showtimeId,
+                'exception' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            // Rollback on exception
+            foreach ($acquiredKeys as $key) {
+                $this->releaseLock($key, $lockToken);
+            }
+
+            return false;
+        }
     }
 
     public function releaseMultipleSeatsLock(string $showtimeId, iterable $seatIds, string $lockToken): void

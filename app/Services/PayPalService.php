@@ -75,7 +75,7 @@ class PayPalService
 
             /** @var Payment|null $existing */
             $existing = $this->paymentModel->newQuery()
-                ->where('booking_id', $booking->id)
+                ->where('booking_id', $booking->booking_id)
                 ->where('method', PaymentMethod::PAYPAL)
                 ->where('status', PaymentStatus::PENDING)
                 ->first();
@@ -88,7 +88,9 @@ class PayPalService
             $payment->exchange_rate   = $conversion->rate;
             $payment->status          = PaymentStatus::PENDING;
             $payment->method          = PaymentMethod::PAYPAL;
-            $payment->booking_id      = $booking->id;
+            $payment->booking_id      = $booking->booking_id;
+            $payment->user_id         = $booking->user_id;
+            $payment->created_at      = now();
             $payment->save();
 
             // TODO: Gọi PayPal SDK PHP để tạo Order

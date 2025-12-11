@@ -244,6 +244,7 @@ class CheckoutService
             $bookingSeat = new BookingSeat([
                 'booking_id' => $booking->booking_id,
                 'showtime_seat_id' => $seatLockSeat->showtime_seat_id,
+                'seat_lock_seat_id' => $seatLockSeat->id, // Primary key của SeatLockSeat
                 'ticket_type_id' => $seatLockSeat->ticket_type_id,
                 'price' => $seatLockSeat->price,
             ]);
@@ -268,7 +269,8 @@ class CheckoutService
                 $bookingPromotion = new BookingPromotion([
                     'booking_id' => $booking->booking_id,
                     'promotion_id' => $promotion->promotion_id,
-                    'discount_value' => $pricingData['discountValue'],
+                    'discount_amount' => $pricingData['discountValue'],
+                    'applied_at' => now(),
                 ]);
                 $bookingPromotion->save();
             }
