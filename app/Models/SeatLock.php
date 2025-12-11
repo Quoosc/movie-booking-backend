@@ -2,30 +2,35 @@
 
 namespace App\Models;
 
+use App\Enums\LockOwnerType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class SeatLock extends Model
 {
     use HasFactory;
 
     protected $table = 'seat_locks';
-    protected $primaryKey = 'seat_lock_id';   // PK dạng UUID
+    protected $primaryKey = 'seat_lock_id';
     public $incrementing = false;
     protected $keyType = 'string';
+    public $timestamps = false; // only created_at, expires_at
 
     protected $fillable = [
+        'lock_key',
+        'lock_owner_id',
+        'lock_owner_type',
+        'user_id',
         'showtime_id',
-        'lock_owner_id',      // UUID user hoặc sessionId
-        'lock_owner_type',    // USER / GUEST_SESSION
-        'lock_key',           // chuỗi random dùng để release
         'expires_at',
-        'status',             // nếu trong DB có cột status
     ];
 
     protected $casts = [
+        'lock_owner_type' => LockOwnerType::class,
         'expires_at' => 'datetime',
+        'created_at' => 'datetime',
     ];
 
     protected static function boot()
@@ -36,19 +41,39 @@ class SeatLock extends Model
             if (empty($model->{$model->getKeyName()})) {
                 $model->{$model->getKeyName()} = (string) Str::uuid();
             }
+            if (empty($model->created_at)) {
+                $model->created_at = Carbon::now();
+            }
         });
     }
 
     // ===== RELATIONSHIPS =====
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id', 'user_id');
+    }
 
     public function showtime()
     {
         return $this->belongsTo(Showtime::class, 'showtime_id', 'showtime_id');
     }
 
-    public function lockSeats()
+    public function seatLockSeats()
     {
-        // bảng seat_lock_seats, PK là seat_lock_seat_id, FK seat_lock_id
         return $this->hasMany(SeatLockSeat::class, 'seat_lock_id', 'seat_lock_id');
+    }
+
+    // ===== METHODS =====
+
+    public function isActive(): bool
+    {
+        return Carbon::now()->isBefore($this->expires_at);
+    }
+
+    public function getRemainingSeconds(): int
+    {
+        $diff = Carbon::now()->diffInSeconds($this->expires_at, false);
+        return max(0, (int) $diff);
     }
 }

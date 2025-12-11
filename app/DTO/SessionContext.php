@@ -2,46 +2,53 @@
 
 namespace App\DTO;
 
+use App\Enums\LockOwnerType;
+
 class SessionContext
 {
-    public const TYPE_USER          = 'USER';
-    public const TYPE_GUEST_SESSION = 'GUEST_SESSION';
+    private string $lockOwnerId;
+    private LockOwnerType $lockOwnerType;
+    private ?string $userId;
 
-    public function __construct(
-        public ?string $userId,
-        public ?string $guestSessionId,
-        public string  $lockOwnerId,
-        public string  $type,
-    ) {
+    public function __construct(string $lockOwnerId, LockOwnerType $lockOwnerType, ?string $userId)
+    {
+        $this->lockOwnerId = $lockOwnerId;
+        $this->lockOwnerType = $lockOwnerType;
+        $this->userId = $userId;
     }
 
-    public static function forUser(string $userId): self
+    public function getLockOwnerId(): string
     {
-        return new self(
-            userId: $userId,
-            guestSessionId: null,
-            lockOwnerId: $userId,
-            type: self::TYPE_USER,
-        );
+        return $this->lockOwnerId;
     }
 
-    public static function forGuest(string $sessionId): self
+    public function getLockOwnerType(): LockOwnerType
     {
-        return new self(
-            userId: null,
-            guestSessionId: $sessionId,
-            lockOwnerId: $sessionId,
-            type: self::TYPE_GUEST_SESSION,
-        );
+        return $this->lockOwnerType;
     }
 
-    public function isUser(): bool
+    public function getUserId(): ?string
     {
-        return $this->type === self::TYPE_USER;
+        return $this->userId;
+    }
+
+    public function isAuthenticated(): bool
+    {
+        return $this->lockOwnerType === LockOwnerType::USER && $this->userId !== null;
     }
 
     public function isGuest(): bool
     {
-        return $this->type === self::TYPE_GUEST_SESSION;
+        return $this->lockOwnerType === LockOwnerType::GUEST;
+    }
+
+    public static function forUser(string $userId): self
+    {
+        return new self($userId, LockOwnerType::USER, $userId);
+    }
+
+    public static function forGuest(string $sessionId): self
+    {
+        return new self($sessionId, LockOwnerType::GUEST, null);
     }
 }

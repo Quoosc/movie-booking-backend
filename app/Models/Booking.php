@@ -32,9 +32,9 @@ class Booking extends Model
     ];
 
     protected $casts = [
-        'total_price'            => 'float',
-        'discount_value'         => 'float',
-        'final_price'            => 'float',
+        'total_price'            => 'decimal:2',
+        'discount_value'         => 'decimal:2',
+        'final_price'            => 'decimal:2',
         'booked_at'              => 'datetime',
         'payment_expires_at'     => 'datetime',
         'refunded'               => 'boolean',
@@ -63,6 +63,11 @@ class Booking extends Model
     public function bookingSnacks()
     {
         return $this->hasMany(BookingSnack::class);
+    }
+
+    public function bookingPromotions()
+    {
+        return $this->hasMany(BookingPromotion::class);
     }
 
     public function payments()
