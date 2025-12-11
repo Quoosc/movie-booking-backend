@@ -48,8 +48,8 @@ class CheckoutLifecycleService
 
             // 2. Create/get user
             $user = null;
-            if ($sessionContext->isUser()) {
-                $user = \App\Models\User::find($sessionContext->userId);
+            if ($sessionContext->isAuthenticated()) {
+                $user = \App\Models\User::find($sessionContext->getUserId());
             } elseif ($guestInfo) {
                 $user = $this->createGuestUser($guestInfo);
             }

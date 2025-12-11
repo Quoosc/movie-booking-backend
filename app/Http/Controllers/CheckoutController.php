@@ -2,59 +2,36 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\CheckoutLifecycleService;
-use App\DTO\SessionContext;
+use App\Services\CheckoutService;
+use App\Helpers\SessionHelper;
+use App\Http\Requests\CheckoutPaymentRequest;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Symfony\Component\HttpFoundation\Response;
+use Illuminate\Http\JsonResponse;
 
 class CheckoutController extends Controller
 {
     public function __construct(
-        protected CheckoutLifecycleService $checkoutService
+        protected CheckoutService $checkoutService,
+        protected SessionHelper $sessionHelper
     ) {}
 
-    protected function respond($data = null, string $message = 'OK', int $code = 200)
+    /**
+     * POST /api/checkout
+     */
+    public function confirmAndInitiate(CheckoutPaymentRequest $request, Request $httpRequest): JsonResponse
     {
+        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
+        
+        $result = $this->checkoutService->confirmBookingAndInitiatePayment(
+            $request->validated(),
+            $sessionContext
+        );
+
         return response()->json([
-            'code'    => $code,
-            'message' => $message,
-            'data'    => $data,
-        ], $code);
-    }
-
-    // POST /api/checkout
-    public function checkout(Request $request)
-    {
-        $data = $request->validate([
-            'lockId'        => 'required|string',
-            'promotionCode' => 'nullable|string',
-            'snackCombos'   => 'array',
-            'snackCombos.*.snackId'  => 'required_with:snackCombos|string|exists:snacks,snack_id',
-            'snackCombos.*.quantity' => 'required_with:snackCombos|integer|min:1',
-            'paymentMethod' => 'required|string|in:MOMO,PAYPAL',
-            'guestInfo'              => 'array',
-            'guestInfo.email'        => 'required_with:guestInfo|email|max:255',
-            'guestInfo.username'     => 'required_with:guestInfo|string|max:255',
-            'guestInfo.phoneNumber'  => 'required_with:guestInfo|string|max:30',
-        ]);
-
-        $user = $request->user();
-        $sessionId = $request->header('X-Session-Id');
-
-        $sessionContext = $user 
-            ? SessionContext::forUser($user->user_id)
-            : ($sessionId ? SessionContext::forGuest($sessionId) : null);
-
-        if (!$sessionContext) {
-            return response()->json([
-                'code' => 401,
-                'message' => 'Authentication required: provide JWT token or X-Session-Id header',
-            ], 401);
-        }
-
-        $result = $this->checkoutService->checkout($data, $sessionContext);
-
-        return $this->respond($result, 'Booking confirmed and payment initiated', Response::HTTP_CREATED);
+            'code' => 201,
+            'message' => 'Booking confirmed and payment initiated',
+            'data' => $result,
+        ], 201);
     }
 }
+

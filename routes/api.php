@@ -191,7 +191,7 @@ Route::middleware('auth.jwt')->group(function () {
     });
 
     // ====== CHECKOUT ======
-    Route::post('/checkout', [CheckoutController::class, 'checkout']);
+    Route::post('/checkout', [CheckoutController::class, 'confirmAndInitiate']);
 
 
     // ========== PAYMENTS (MOMO + PAYPAL + REFUND) ==========

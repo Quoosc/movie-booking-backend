@@ -24,6 +24,15 @@ class TicketTypeService
         protected PriceCalculationService $priceCalculationService,
     ) {}
 
+    /**
+     * Get ticket type label by ID
+     */
+    public function getTicketTypeLabel(string $ticketTypeId): string
+    {
+        $ticketType = $this->ticketTypeModel->find($ticketTypeId);
+        return $ticketType ? $ticketType->label : 'Unknown';
+    }
+
     /** GET /ticket-types (không kèm showtime) */
     public function getAllActiveTicketTypes(): array
     {

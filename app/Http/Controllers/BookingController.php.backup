@@ -1,0 +1,319 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Services\{BookingService, CheckoutService};
+use App\Helpers\SessionHelper;
+use App\Http\Requests\{PricePreviewRequest, ConfirmBookingRequest, UpdateQrCodeRequest};
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+
+class BookingController extends Controller
+{
+    public function __construct(
+        protected BookingService $bookingService,
+        protected CheckoutService $checkoutService,
+        protected SessionHelper $sessionHelper
+    ) {}
+
+    /**
+     * POST /api/bookings/price-preview
+     */
+    public function pricePreview(PricePreviewRequest $request, Request $httpRequest): JsonResponse
+    {
+        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
+        
+        $result = $this->bookingService->calculatePricePreview(
+            $request->validated(),
+            $sessionContext
+        );
+
+        return response()->json([
+            'code' => 200,
+            'data' => $result,
+        ]);
+    }
+
+    /**
+     * POST /api/bookings/confirm
+     */
+    public function confirmBooking(ConfirmBookingRequest $request, Request $httpRequest): JsonResponse
+    {
+        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
+        
+        $result = $this->checkoutService->confirmBooking(
+            $request->validated(),
+            $sessionContext
+        );
+
+        return response()->json([
+            'code' => 201,
+            'message' => 'Booking confirmed',
+            'data' => $result,
+        ], 201);
+    }
+
+    /**
+     * GET /api/bookings/my-bookings
+     * Middleware: auth:api
+     */
+    public function getUserBookings(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        
+        $result = $this->bookingService->getUserBookings($user->user_id);
+
+        return response()->json([
+            'code' => 200,
+            'data' => $result,
+        ]);
+    }
+
+    /**
+     * GET /api/bookings/{bookingId}
+     * Middleware: auth:api
+     */
+    public function getBookingById(string $bookingId, Request $request): JsonResponse
+    {
+        $user = $request->user();
+        
+        $result = $this->bookingService->getBookingByIdForUser($bookingId, $user->user_id);
+
+        return response()->json([
+            'code' => 200,
+            'data' => $result,
+        ]);
+    }
+
+    /**
+     * PATCH /api/bookings/{bookingId}/qr
+     * Middleware: auth:api
+     */
+    public function updateQrCode(string $bookingId, UpdateQrCodeRequest $request, Request $httpRequest): JsonResponse
+    {
+        $user = $httpRequest->user();
+//         }
+
+//         $total = $booking->final_price ?? $booking->total_price;
+
+//         // Danh sách ghế
+//         $seats = DB::table('booking_seats as bs')
+//             ->join('showtime_seats as sts', 'bs.showtime_seat_id', '=', 'sts.showtime_seat_id')
+//             ->join('seats as s', 'sts.seat_id', '=', 's.seat_id')
+//             ->where('bs.booking_id', $bookingId)
+//             ->select(
+//                 's.row_label',
+//                 's.seat_number',
+//                 'bs.price'
+//             )
+//             ->get()
+//             ->map(function ($row) {
+//                 return [
+//                     'rowLabel'   => $row->row_label,
+//                     'seatNumber' => $row->seat_number,
+//                     'price'      => (float) $row->price,
+//                 ];
+//             });
+
+//         // Danh sách bắp nước
+//         $snacks = DB::table('booking_snacks as bs')
+//             ->join('snacks as s', 'bs.snack_id', '=', 's.snack_id')
+//             ->where('bs.booking_id', $bookingId)
+//             ->select(
+//                 's.snack_id',
+//                 's.name',
+//                 's.type',
+//                 's.price',
+//                 'bs.quantity'
+//             )
+//             ->get()
+//             ->map(function ($row) {
+//                 return [
+//                     'snackId'  => $row->snack_id,
+//                     'name'     => $row->name,
+//                     'type'     => $row->type,
+//                     'price'    => (float) $row->price,
+//                     'quantity' => (int) $row->quantity,
+//                 ];
+//             });
+
+//         $response = [
+//             'bookingId'  => $booking->booking_id,
+//             'status'     => $booking->status,
+//             'bookedAt'   => $booking->booked_at,
+//             'totalPrice' => $total ? (float) $total : 0,
+//             'qrCode'     => $booking->qr_code,
+//             'qrPayload'  => $booking->qr_payload,
+
+//             'movie' => [
+//                 'movieId'    => $booking->movie_id,
+//                 'title'      => $booking->movie_title,
+//             ],
+
+//             'cinema' => [
+//                 'cinemaId'   => $booking->cinema_id,
+//                 'name'       => $booking->cinema_name,
+//             ],
+
+//             'showtime' => [
+//                 'showtimeId' => $booking->showtime_id,
+//                 'startTime'  => $booking->start_time,
+//                 'roomNumber' => $booking->room_number,
+//             ],
+
+//             'seats'  => $seats,
+//             'snacks' => $snacks,
+//         ];
+
+//         return $this->respond($response);
+//     }
+
+//     public function lockSeats(Request $request)
+//     {
+//         $validated = $request->validate([
+//             'showtimeId'            => 'required|uuid',
+//             'seats'                 => 'required|array|min:1',
+//             'seats.*.showtimeSeatId' => 'required|uuid',
+//             'seats.*.ticketTypeId'  => 'nullable|uuid',
+//             'snacks'                => 'array',
+//             'snacks.*.snackId'      => 'required_with:snacks|uuid',
+//             'snacks.*.quantity'     => 'required_with:snacks|integer|min:1',
+//             'promotionCode'         => 'nullable|string',
+//         ]);
+
+//         $sessionContext = $this->sessionHelper->extractSessionContext($request);
+
+//         $dto = new LockSeatsRequest(
+//             showtimeId: $validated['showtimeId'],
+//             seats: $validated['seats'],
+//             snacks: $validated['snacks'] ?? [],
+//             promotionCode: $validated['promotionCode'] ?? null,
+//         );
+
+//         $resp = $this->bookingService->lockSeats($dto, $sessionContext);
+
+//         return response()->json([
+//             'code'    => 200,
+//             'message' => 'Seats locked successfully',
+//             'data'    => [
+//                 'lockToken'    => $resp->lockToken,
+//                 'showtimeId'   => $resp->showtimeId,
+//                 'remainSeconds' => $resp->remainSeconds,
+//                 'expiresAt'    => $resp->expiresAtIso,
+//                 'seats'        => $resp->seatItems,
+//                 'snacks'       => $resp->snackItems,
+//                 'priceSummary' => $resp->priceSummary,
+//             ],
+//         ]);
+//     }
+// }
+
+
+
+namespace App\Http\Controllers;
+
+use App\Services\{BookingService, CheckoutService};
+use App\Helpers\SessionHelper;
+use App\Http\Requests\{PricePreviewRequest, ConfirmBookingRequest, UpdateQrCodeRequest};
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+
+class BookingController extends Controller
+{
+    public function __construct(
+        protected BookingService $bookingService,
+        protected CheckoutService $checkoutService,
+        protected SessionHelper $sessionHelper
+    ) {}
+
+    /**
+     * POST /api/bookings/price-preview
+     */
+    public function pricePreview(PricePreviewRequest $request, Request $httpRequest): JsonResponse
+    {
+        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
+        
+        $result = $this->bookingService->calculatePricePreview(
+            $request->validated(),
+            $sessionContext
+        );
+
+        return response()->json([
+            'code' => 200,
+            'data' => $result,
+        ]);
+    }
+
+    /**
+     * POST /api/bookings/confirm
+     */
+    public function confirmBooking(ConfirmBookingRequest $request, Request $httpRequest): JsonResponse
+    {
+        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
+        
+        $result = $this->checkoutService->confirmBooking(
+            $request->validated(),
+            $sessionContext
+        );
+
+        return response()->json([
+            'code' => 201,
+            'message' => 'Booking confirmed',
+            'data' => $result,
+        ], 201);
+    }
+
+    /**
+     * GET /api/bookings/my-bookings
+     * Middleware: auth:api
+     */
+    public function getUserBookings(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        
+        $result = $this->bookingService->getUserBookings($user->user_id);
+
+        return response()->json([
+            'code' => 200,
+            'data' => $result,
+        ]);
+    }
+
+    /**
+     * GET /api/bookings/{bookingId}
+     * Middleware: auth:api
+     */
+    public function getBookingById(string $bookingId, Request $request): JsonResponse
+    {
+        $user = $request->user();
+        
+        $result = $this->bookingService->getBookingByIdForUser($bookingId, $user->user_id);
+
+        return response()->json([
+            'code' => 200,
+            'data' => $result,
+        ]);
+    }
+
+    /**
+     * PATCH /api/bookings/{bookingId}/qr
+     * Middleware: auth:api
+     */
+    public function updateQrCode(string $bookingId, UpdateQrCodeRequest $request, Request $httpRequest): JsonResponse
+    {
+        $user = $httpRequest->user();
+        
+        $result = $this->bookingService->updateQrCode(
+            $bookingId,
+            $user->user_id,
+            $request->validated()['qrCodeUrl']
+        );
+
+        return response()->json([
+            'code' => 200,
+            'message' => 'QR code updated',
+            'data' => $result,
+        ]);
+    }
+}
+
