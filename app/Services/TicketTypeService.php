@@ -13,71 +13,99 @@ use App\Models\TicketType;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use App\Exceptions\ResourceNotFoundException;
 
 class TicketTypeService
 {
     public function __construct(
-        private PriceCalculationService $priceCalculationService
+        protected TicketType          $ticketTypeModel,
+        protected Showtime            $showtimeModel,
+        protected ShowtimeTicketType  $showtimeTicketTypeModel,
+        protected PriceCalculationService $priceCalculationService,
     ) {}
 
     /** GET /ticket-types (không kèm showtime) */
-    public function getAllActiveTicketTypes(): Collection
+    public function getAllActiveTicketTypes(): array
     {
-        return TicketType::where('active', true)
+        return $this->ticketTypeModel
+            ->newQuery()
+            ->where('active', true)
             ->orderBy('sort_order')
-            ->get();
+            ->get()
+            ->all();
     }
 
     /** GET /ticket-types?showtimeId=... */
-    public function getTicketTypesForShowtime(string $showtimeId, ?string $userId): Collection
+    public function getTicketTypesForShowtime(string $showtimeId, ?string $userId = null): array
     {
-        $showtime = Showtime::where('showtime_id', $showtimeId)->firstOrFail();
+        /** @var Showtime|null $showtime */
+        $showtime = $this->showtimeModel->newQuery()->find($showtimeId);
 
-        $assignments = ShowtimeTicketType::where('showtime_id', $showtimeId)
+        if (!$showtime) {
+            throw new ResourceNotFoundException('Showtime not found');
+        }
+
+        $showtimeTicketTypes = $this->showtimeTicketTypeModel
+            ->newQuery()
+            ->where('showtime_id', $showtimeId)
             ->where('active', true)
+            ->orderBy('sort_order')
             ->get();
 
-        if ($assignments->isEmpty()) {
-            Log::warning("No ticket types assigned to showtime {$showtimeId}, fallback to all active.");
-            $ticketTypes = TicketType::where('active', true)
-                ->orderBy('sort_order')
-                ->get();
-        } else {
-            $ids = $assignments->pluck('ticket_type_id');
-            $ticketTypes = TicketType::whereIn('id', $ids)
+        if ($showtimeTicketTypes->isEmpty()) {
+            Log::warning("No ticket types assigned to showtime {$showtimeId}. Falling back to all active ticket types.");
+            $ticketTypes = $this->ticketTypeModel
+                ->newQuery()
                 ->where('active', true)
                 ->orderBy('sort_order')
                 ->get();
+        } else {
+            $ticketTypes = $showtimeTicketTypes
+                ->map(fn(ShowtimeTicketType $stt) => $stt->ticketType)
+                ->filter()
+                ->values();
         }
 
-        // reference seat NORMAL
+        // Reference price: NORMAL seat
         $referenceSeat = new Seat([
-            'seat_type' => 'NORMAL',
+            'seat_type' => 'NORMAL', // hoặc SeatType::NORMAL->value
         ]);
-        $basePrice = $this->priceCalculationService->calculatePrice($showtime, $referenceSeat);
 
-        return $ticketTypes->map(function (TicketType $tt) use ($basePrice) {
-            $tt->price = $this->applyTicketTypeModifier($basePrice, $tt);
-            return $tt;
-        });
+        $referencePrice = $this->priceCalculationService->calculatePrice($showtime, $referenceSeat);
+
+        $result = [];
+
+        foreach ($ticketTypes as $ticketType) {
+            $priceWithModifier = $this->applyTicketTypeModifier($referencePrice, $ticketType);
+            $result[] = [
+                'id'            => $ticketType->id,
+                'code'          => $ticketType->code,
+                'label'         => $ticketType->label,
+                'modifier_type' => $ticketType->modifier_type,
+                'modifier_value' => $ticketType->modifier_value,
+                'active'        => $ticketType->active,
+                'sort_order'    => $ticketType->sort_order,
+                'price'         => $priceWithModifier,
+            ];
+        }
+
+        return $result;
     }
+
 
     /** Áp dụng modifier giống Spring */
     public function applyTicketTypeModifier(float $basePrice, TicketType $ticketType): float
     {
-        $value = (float) $ticketType->modifier_value;
-
-        switch ($ticketType->modifier_type) {
-            case 'PERCENTAGE':
-                $multiplier = 1 + ($value / 100.0);
-                return round($basePrice * $multiplier);
-
-            case 'FIXED_AMOUNT':
-                return round($basePrice + $value);
-
-            default:
-                return round($basePrice);
+        if ($ticketType->modifier_type === 'PERCENTAGE') {
+            $multiplier = 1.0 + ((float) $ticketType->modifier_value / 100.0);
+            return round($basePrice * $multiplier, 0);
         }
+
+        if ($ticketType->modifier_type === 'FIXED_AMOUNT') {
+            return round($basePrice + (float) $ticketType->modifier_value, 0);
+        }
+
+        return $basePrice;
     }
 
     /** GET /ticket-types/admin */
@@ -156,16 +184,26 @@ class TicketTypeService
     /** Check ticket type có hợp lệ cho showtime không (cho bước lock seat sau này) */
     public function validateTicketTypeForShowtime(string $showtimeId, string $ticketTypeId): void
     {
-        $ticketType = TicketType::findOrFail($ticketTypeId);
+        /** @var TicketType|null $ticketType */
+        $ticketType = $this->ticketTypeModel->newQuery()->find($ticketTypeId);
 
-        $exists = ShowtimeTicketType::where('showtime_id', $showtimeId)
+        if (!$ticketType) {
+            throw new ResourceNotFoundException('TicketType not found');
+        }
+
+        $exists = $this->showtimeTicketTypeModel
+            ->newQuery()
+            ->where('showtime_id', $showtimeId)
             ->where('ticket_type_id', $ticketTypeId)
             ->where('active', true)
             ->exists();
 
         if (!$exists) {
             throw new \InvalidArgumentException(
-                "Ticket type '{$ticketType->code}' is not available for this showtime."
+                sprintf(
+                    "Ticket type '%s' is not available for this showtime. Please select from the available ticket types for this showtime.",
+                    $ticketType->code
+                )
             );
         }
     }

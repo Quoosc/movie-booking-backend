@@ -37,6 +37,8 @@ class Showtime extends Model
         });
     }
 
+    // ===== RELATIONSHIPS =====
+
     public function movie()
     {
         return $this->belongsTo(Movie::class, 'movie_id', 'movie_id');
@@ -47,20 +49,19 @@ class Showtime extends Model
         return $this->belongsTo(Room::class, 'room_id', 'room_id');
     }
 
-    // Mấy cái dưới chủ yếu để delete showtime check, chưa xài có thể comment tạm
+    public function showtimeSeats()
+    {
+        // PK của showtime_seats là showtime_seat_id, nhưng FK vẫn là showtime_id
+        return $this->hasMany(ShowtimeSeat::class, 'showtime_id', 'showtime_id');
+    }
 
-    // public function showtimeSeats()
-    // {
-    //     return $this->hasMany(ShowtimeSeat::class, 'showtime_id', 'showtime_id');
-    // }
+    public function seatLocks()
+    {
+        return $this->hasMany(SeatLock::class, 'showtime_id', 'showtime_id');
+    }
 
-    // public function seatLocks()
-    // {
-    //     return $this->hasMany(SeatLock::class, 'showtime_id', 'showtime_id');
-    // }
-
-    // public function bookings()
-    // {
-    //     return $this->hasMany(Booking::class, 'showtime_id', 'showtime_id');
-    // }
+    public function bookings()
+    {
+        return $this->hasMany(Booking::class, 'showtime_id', 'showtime_id');
+    }
 }

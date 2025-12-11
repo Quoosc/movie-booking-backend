@@ -11,14 +11,15 @@ use App\Http\Controllers\MovieController;
 use App\Http\Controllers\CinemaController;
 use App\Http\Controllers\SeatController;
 use App\Http\Controllers\ShowtimeController;
+use App\Http\Controllers\ShowtimeSeatController;
 
 use App\Http\Controllers\TicketTypeController;
 use App\Http\Controllers\ShowtimeTicketTypeController;
 use App\Http\Controllers\PriceBaseController;
 use App\Http\Controllers\PriceModifierController;
 use App\Http\Controllers\PromotionController;
-
-
+use App\Http\Controllers\Payments\PayPalController;
+use App\Http\Controllers\Payments\MomoController;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,7 +37,9 @@ Route::prefix('auth')->group(function () {
 });
 
 
-// ========== PUBLIC / BROWSING: MOVIES ==========
+// ======================================================================
+// PUBLIC / BROWSING: MOVIES
+// ======================================================================
 Route::prefix('movies')->group(function () {
     // GET /api/movies        -> list + advanced search (title, genre, status)
     Route::get('/', [MovieController::class, 'index']);
@@ -58,7 +61,9 @@ Route::prefix('movies')->group(function () {
 });
 
 
-// ========== PUBLIC + ADMIN: CINEMAS ==========
+// ======================================================================
+// PUBLIC + ADMIN: CINEMAS
+// ======================================================================
 Route::prefix('cinemas')->group(function () {
     // PUBLIC
     Route::get('/', [CinemaController::class, 'index']);
@@ -94,7 +99,9 @@ Route::prefix('cinemas')->group(function () {
 });
 
 
-// ========== PUBLIC / BROWSING: SHOWTIMES ==========
+// ======================================================================
+// PUBLIC / BROWSING: SHOWTIMES
+// ======================================================================
 Route::prefix('showtimes')->group(function () {
     Route::get('/', [ShowtimeController::class, 'index']);
     Route::get('/{showtimeId}', [ShowtimeController::class, 'show']);
@@ -104,13 +111,22 @@ Route::prefix('showtimes')->group(function () {
     Route::get('/room/{roomId}', [ShowtimeController::class, 'byRoom']);
 });
 
-// ========== PUBLIC: TICKET TYPES (guest/user) ==========
+
+// ======================================================================
+// PUBLIC: TICKET TYPES (guest/user)
+// ======================================================================
 Route::get('/ticket-types', [TicketTypeController::class, 'index']);
 
 
-// ========== PUBLIC: PROMOTIONS ==========
+
+// PUBLIC: seat layout cho 1 showtime
+Route::get('/seats/layout', [SeatController::class, 'layout']);
+
+// ======================================================================
+// PUBLIC: PROMOTIONS
+// ======================================================================
 Route::prefix('promotions')->group(function () {
-    Route::get('/', [PromotionController::class, 'index']);                // GET /api/promotions?filter=
+    Route::get('/', [PromotionController::class, 'index']);                 // GET /api/promotions?filter=
     Route::get('/active', [PromotionController::class, 'getActive']);      // GET /api/promotions/active
     Route::get('/valid', [PromotionController::class, 'getValid']);        // GET /api/promotions/valid
     Route::get('/code/{code}', [PromotionController::class, 'showByCode']); // GET /api/promotions/code/{code}
@@ -118,10 +134,14 @@ Route::prefix('promotions')->group(function () {
 });
 
 
-// ========== CÁC ROUTE CẦN ĐĂNG NHẬP (USER, BOOKING, ADMIN MOVIE, SEAT) ==========
+// ======================================================================
+// CÁC ROUTE CẦN ĐĂNG NHẬP (USER, BOOKING, ADMIN ...)
+// ======================================================================
 Route::middleware('auth.jwt')->group(function () {
 
-    // ----- USER PROFILE -----
+    // ------------------------------------------------------------------
+    // USER PROFILE
+    // ------------------------------------------------------------------
     Route::prefix('users')->group(function () {
         Route::get('/profile', [UsersController::class, 'getProfile']);
         Route::put('/profile', [UsersController::class, 'updateProfile']);
@@ -129,7 +149,9 @@ Route::middleware('auth.jwt')->group(function () {
         Route::get('/loyalty', [UsersController::class, 'getLoyalty']);
     });
 
-    // ----- MEMBERSHIP TIERS -----
+    // ------------------------------------------------------------------
+    // MEMBERSHIP TIERS
+    // ------------------------------------------------------------------
     Route::prefix('membership-tiers')->group(function () {
         // LIST + GET
         Route::get('/', [MembershipTierController::class, 'index']);              // GET /api/membership-tiers
@@ -144,37 +166,95 @@ Route::middleware('auth.jwt')->group(function () {
         Route::delete('/{id}', [MembershipTierController::class, 'destroy']);    // DELETE
     });
 
-    // ----- BOOKINGS (history + detail) -----
-    Route::prefix('bookings')->group(function () {
-        // GET /api/bookings/my-bookings
-        Route::get('/my-bookings', [BookingController::class, 'myBookings']);
-
-        // GET /api/bookings/{bookingId}
-        Route::get('/{bookingId}', [BookingController::class, 'show']);
+    // ------------------------------------------------------------------
+    // BOOKINGS (lock seats + create booking + history)
+    // ------------------------------------------------------------------
+    // ========== BOOKING FLOW ==========
+    // ====== SEAT LOCKS ======
+    Route::prefix('seat-locks')->group(function () {
+        Route::post('/', [SeatLockController::class, 'lockSeats']);
+        Route::get('/availability/showtime/{showtimeId}', [SeatLockController::class, 'checkAvailability']);
+        Route::delete('/showtime/{showtimeId}', [SeatLockController::class, 'releaseSeats']);
     });
 
-    // ----- ADMIN MOVIES (Create / Update / Delete) -----
+    // ====== BOOKINGS ======
+    Route::prefix('bookings')->group(function () {
+        Route::post('/price-preview', [BookingController::class, 'pricePreview']);
+        Route::post('/confirm',       [BookingController::class, 'confirmBooking']);
+
+        Route::get('/my-bookings',              [BookingController::class, 'getUserBookings']);
+        Route::get('/{bookingId}',              [BookingController::class, 'getBookingById']);
+        Route::patch('/{bookingId}/qr',         [BookingController::class, 'updateQrCode']);
+    });
+
+
+    // ========== PAYMENTS (MOMO + PAYPAL + REFUND) ==========
+    Route::prefix('payments')->group(function () {
+        // PAYPAL
+        Route::prefix('paypal')->group(function () {
+            // POST /api/payments/paypal/create-order
+            Route::post('create-order',  [PayPalController::class, 'createOrder']);
+            // POST /api/payments/paypal/capture-order
+            Route::post('capture-order', [PayPalController::class, 'captureOrder']);
+        });
+
+        // MOMO
+        Route::prefix('momo')->group(function () {
+            // POST /api/payments/momo/create-order
+            Route::post('create-order', [MomoController::class, 'createOrder']);
+            // POST /api/payments/momo/ipn
+            Route::post('ipn',          [MomoController::class, 'ipn']);
+            // GET /api/payments/momo/verify?orderId=...
+            Route::get('verify',        [MomoController::class, 'verifyPayment']);
+        });
+
+        // REFUND (admin)
+        Route::middleware('can:admin')->group(function () {
+            // POST /api/payments/{paymentId}/refund
+            Route::post('{paymentId}/refund', [RefundController::class, 'refund']);
+        });
+    });
+
+    // ------------------------------------------------------------------
+    // ADMIN MOVIES (Create / Update / Delete)
+    // ------------------------------------------------------------------
     Route::prefix('movies')->group(function () {
-        // POST /api/movies
         Route::post('/', [MovieController::class, 'store']);
-
-        // PUT /api/movies/{movieId}
         Route::put('/{movieId}', [MovieController::class, 'update']);
-
-        // DELETE /api/movies/{movieId}
         Route::delete('/{movieId}', [MovieController::class, 'destroy']);
     });
 
-    // ----- ADMIN SEATS -----
+    // ===== ADMIN SEATS =====
     Route::prefix('seats')->group(function () {
-        // POST /api/seats/generate
-        Route::post('/generate', [SeatController::class, 'generate']);
+        // Tools đặt trước đường /{seatId} để tránh nuốt route
+        Route::get('/row-labels', [SeatController::class, 'rowLabels']);     // GET /seats/row-labels?rows=10
+        Route::post('/generate',   [SeatController::class, 'generate']);     // POST /seats/generate
+        Route::get('/room/{roomId}', [SeatController::class, 'getByRoom']);  // GET /seats/room/{roomId}
+        Route::get('/layout',        [SeatController::class, 'layout']);     // GET /seats/layout?showtimeId=...
 
-        // GET /api/seats/row-labels?rows=10
-        Route::get('/row-labels', [SeatController::class, 'rowLabels']);
+        // CRUD cơ bản cho seat (admin)
+        Route::get('/',           [SeatController::class, 'index']);   // GET /seats
+        Route::post('/',          [SeatController::class, 'store']);   // POST /seats
+        Route::get('/{seatId}',   [SeatController::class, 'show']);    // GET /seats/{seatId}
+        Route::put('/{seatId}',   [SeatController::class, 'update']);  // PUT /seats/{seatId}
+        Route::delete('/{seatId}', [SeatController::class, 'destroy']); // DELETE /seats/{seatId}
     });
 
-    // ========== ADMIN: SHOWTIMES ==========
+    // ===== SHOWTIME SEATS (admin tools) =====
+    Route::prefix('showtime-seats')->group(function () {
+        Route::get('/showtime/{showtimeId}',             [ShowtimeSeatController::class, 'getByShowtime']);
+        Route::get('/showtime/{showtimeId}/available',   [ShowtimeSeatController::class, 'getAvailableByShowtime']);
+        Route::post('/showtime/{showtimeId}/recalculate-prices', [ShowtimeSeatController::class, 'recalculatePrices']);
+
+        Route::get('/{id}',        [ShowtimeSeatController::class, 'getById']);
+        Route::put('/{id}',        [ShowtimeSeatController::class, 'update']);      // nếu muốn chỉnh tay status/price
+        Route::put('/{id}/reset',  [ShowtimeSeatController::class, 'reset']);       // reset về AVAILABLE
+    });
+
+
+    // ------------------------------------------------------------------
+    // ADMIN: SHOWTIMES CRUD
+    // ------------------------------------------------------------------
     Route::prefix('showtimes')->group(function () {
         Route::post('/', [ShowtimeController::class, 'store']);
         Route::put('/{showtimeId}', [ShowtimeController::class, 'update']);
@@ -182,7 +262,9 @@ Route::middleware('auth.jwt')->group(function () {
     });
 
 
-    // ===== ADMIN: TICKET TYPES =====
+    // ------------------------------------------------------------------
+    // ADMIN: TICKET TYPES
+    // ------------------------------------------------------------------
     Route::prefix('ticket-types')->group(function () {
         Route::get('/admin', [TicketTypeController::class, 'adminIndex']);
         Route::post('/', [TicketTypeController::class, 'store']);
@@ -190,7 +272,9 @@ Route::middleware('auth.jwt')->group(function () {
         Route::delete('/{id}', [TicketTypeController::class, 'destroy']);
     });
 
-    // ===== ADMIN: SHOWTIME TICKET TYPES =====
+    // ------------------------------------------------------------------
+    // ADMIN: SHOWTIME TICKET TYPES
+    // ------------------------------------------------------------------
     Route::prefix('showtimes/{showtimeId}/ticket-types')->group(function () {
         Route::get('/', [ShowtimeTicketTypeController::class, 'index']);
         Route::post('/', [ShowtimeTicketTypeController::class, 'assignMultiple']);
@@ -199,28 +283,34 @@ Route::middleware('auth.jwt')->group(function () {
         Route::delete('/{ticketTypeId}', [ShowtimeTicketTypeController::class, 'remove']);
     });
 
-    // ===== PRICING: PRICE BASE =====
+    // ------------------------------------------------------------------
+    // PRICING: PRICE BASE
+    // ------------------------------------------------------------------
     Route::prefix('price-base')->group(function () {
-        Route::post('/', [PriceBaseController::class, 'store']);      // POST /api/price-base
-        Route::get('/',  [PriceBaseController::class, 'index']);      // GET /api/price-base
+        Route::post('/', [PriceBaseController::class, 'store']);          // POST /api/price-base
+        Route::get('/',  [PriceBaseController::class, 'index']);          // GET /api/price-base
         Route::get('/active', [PriceBaseController::class, 'getActive']); // GET /api/price-base/active
-        Route::get('/{id}', [PriceBaseController::class, 'show']);    // GET /api/price-base/{id}
-        Route::put('/{id}', [PriceBaseController::class, 'update']);  // PUT /api/price-base/{id}
-        Route::delete('/{id}', [PriceBaseController::class, 'destroy']); // DELETE /api/price-base/{id}
+        Route::get('/{id}', [PriceBaseController::class, 'show']);        // GET /api/price-base/{id}
+        Route::put('/{id}', [PriceBaseController::class, 'update']);      // PUT /api/price-base/{id}
+        Route::delete('/{id}', [PriceBaseController::class, 'destroy']);  // DELETE /api/price-base/{id}
     });
 
-    // ===== PRICING: PRICE MODIFIERS =====
+    // ------------------------------------------------------------------
+    // PRICING: PRICE MODIFIERS
+    // ------------------------------------------------------------------
     Route::prefix('price-modifiers')->group(function () {
-        Route::post('/', [PriceModifierController::class, 'store']);      // POST /api/price-modifiers
-        Route::get('/',  [PriceModifierController::class, 'index']);      // GET /api/price-modifiers
+        Route::post('/', [PriceModifierController::class, 'store']);          // POST /api/price-modifiers
+        Route::get('/',  [PriceModifierController::class, 'index']);          // GET /api/price-modifiers
         Route::get('/active', [PriceModifierController::class, 'getActive']); // GET /api/price-modifiers/active
         Route::get('/by-condition', [PriceModifierController::class, 'getByCondition']); // GET /api/price-modifiers/by-condition?conditionType=...
-        Route::get('/{id}', [PriceModifierController::class, 'show']);    // GET /api/price-modifiers/{id}
-        Route::put('/{id}', [PriceModifierController::class, 'update']);  // PUT /api/price-modifiers/{id}
-        Route::delete('/{id}', [PriceModifierController::class, 'destroy']); // DELETE /api/price-modifiers/{id}
+        Route::get('/{id}', [PriceModifierController::class, 'show']);        // GET /api/price-modifiers/{id}
+        Route::put('/{id}', [PriceModifierController::class, 'update']);      // PUT /api/price-modifiers/{id}
+        Route::delete('/{id}', [PriceModifierController::class, 'destroy']);  // DELETE /api/price-modifiers/{id}
     });
 
-    // ===== ADMIN: PROMOTIONS =====
+    // ------------------------------------------------------------------
+    // ADMIN: PROMOTIONS
+    // ------------------------------------------------------------------
     Route::prefix('promotions')->group(function () {
         Route::post('/', [PromotionController::class, 'store']);                      // POST /api/promotions
         Route::put('/{promotionId}', [PromotionController::class, 'update']);         // PUT /api/promotions/{id}

@@ -5,9 +5,15 @@ namespace App\Http\Controllers;
 use App\Http\Resources\SeatResource;
 use App\Models\Room;
 use App\Models\Seat;
+use App\Models\Showtime;
+use App\Models\ShowtimeSeat;
+use App\Models\SeatLockSeat;
+use App\Enums\SeatStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
+use App\Services\SeatLayoutService;
 
 class SeatController extends Controller
 {
@@ -31,7 +37,131 @@ class SeatController extends Controller
         return null;
     }
 
-    // ========== POST /seats/generate ==========
+    protected SeatLayoutService $seatLayoutService;
+
+    public function __construct(SeatLayoutService $seatLayoutService)
+    {
+        $this->seatLayoutService = $seatLayoutService;
+    }
+
+    // ========== BASIC CRUD ==========
+
+    // GET /seats
+    public function index()
+    {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
+        $seats = Seat::with('room.cinema')
+            ->orderBy('room_id')
+            ->orderBy('row_label')
+            ->orderBy('seat_number')
+            ->get();
+
+        return $this->respond(SeatResource::collection($seats));
+    }
+
+    // GET /seats/{seatId}
+    public function show(string $seatId)
+    {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
+        $seat = Seat::with('room.cinema')->findOrFail($seatId);
+
+        return $this->respond(new SeatResource($seat));
+    }
+
+    // POST /seats  (tạo 1 ghế đơn lẻ – ít xài vì đã có generate)
+    public function store(Request $request)
+    {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
+        $data = $request->validate([
+            'roomId'     => 'required|exists:rooms,room_id',
+            'seatNumber' => 'required|integer|min:1',
+            'rowLabel'   => 'required|string|max:5',
+            'seatType'   => 'required|in:NORMAL,VIP,COUPLE',
+        ]);
+
+        $seat = Seat::create([
+            'room_id'     => $data['roomId'],
+            'seat_number' => $data['seatNumber'],
+            'row_label'   => strtoupper($data['rowLabel']),
+            'seat_type'   => strtoupper($data['seatType']),
+        ]);
+
+        $seat->load('room.cinema');
+
+        return $this->respond(new SeatResource($seat), 'Seat created', Response::HTTP_CREATED);
+    }
+
+    // PUT /seats/{seatId}
+    public function update(string $seatId, Request $request)
+    {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
+        $seat = Seat::findOrFail($seatId);
+
+        $data = $request->validate([
+            'seatNumber' => 'sometimes|integer|min:1',
+            'rowLabel'   => 'sometimes|string|max:5',
+            'seatType'   => 'sometimes|in:NORMAL,VIP,COUPLE',
+        ]);
+
+        if (array_key_exists('seatNumber', $data)) {
+            $seat->seat_number = $data['seatNumber'];
+        }
+        if (array_key_exists('rowLabel', $data)) {
+            $seat->row_label = strtoupper($data['rowLabel']);
+        }
+        if (array_key_exists('seatType', $data)) {
+            $seat->seat_type = strtoupper($data['seatType']);
+        }
+
+        $seat->save();
+        $seat->load('room.cinema');
+
+        return $this->respond(new SeatResource($seat), 'Seat updated');
+    }
+
+    // DELETE /seats/{seatId}
+    public function destroy(string $seatId)
+    {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
+        $seat = Seat::findOrFail($seatId);
+        $seat->delete();
+
+        return $this->respond(null, 'Seat deleted', Response::HTTP_NO_CONTENT);
+    }
+
+    // ========== TOOLS ==========
+
+    // GET /seats/room/{roomId}
+    public function getByRoom(string $roomId)
+    {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
+        $room = Room::with('cinema')->findOrFail($roomId);
+
+        $seats = Seat::with('room.cinema')
+            ->where('room_id', $roomId)
+            ->orderBy('row_label')
+            ->orderBy('seat_number')
+            ->get();
+
+        $data = [
+            'roomId'    => $room->room_id,
+            'roomName'  => $room->name ?? $room->room_number ?? null,
+            'cinemaId'  => $room->cinema?->cinema_id,
+            'cinemaName' => $room->cinema?->name,
+            'totalSeats' => $seats->count(),
+            'seats'     => SeatResource::collection($seats),
+        ];
+
+        return $this->respond($data);
+    }
+
+    // POST /seats/generate   (bạn đã có – giữ nguyên, mình chỉ copy lại cho đủ file)
     public function generate(Request $request)
     {
         if ($resp = $this->ensureAdmin()) return $resp;
@@ -48,7 +178,6 @@ class SeatController extends Controller
 
         $room = Room::with('cinema')->findOrFail($data['roomId']);
 
-        // Không cho generate nếu room đã có ghế
         if ($room->seats()->exists()) {
             return $this->respond(
                 null,
@@ -64,29 +193,40 @@ class SeatController extends Controller
 
         $normalCount = $vipCount = $coupleCount = 0;
 
-        for ($i = 0; $i < $rows; $i++) {
-            $rowLabel = chr(ord('A') + $i); // A, B, C, ...
+        DB::transaction(function () use (
+            $room,
+            $rows,
+            $seatsPerRow,
+            $vipRows,
+            $coupleRows,
+            &$normalCount,
+            &$vipCount,
+            &$coupleCount
+        ) {
+            for ($i = 0; $i < $rows; $i++) {
+                $rowLabel = chr(ord('A') + $i);
 
-            for ($num = 1; $num <= $seatsPerRow; $num++) {
-                if (in_array($rowLabel, $coupleRows, true)) {
-                    $seatType = 'COUPLE';
-                    $coupleCount++;
-                } elseif (in_array($rowLabel, $vipRows, true)) {
-                    $seatType = 'VIP';
-                    $vipCount++;
-                } else {
-                    $seatType = 'NORMAL';
-                    $normalCount++;
+                for ($num = 1; $num <= $seatsPerRow; $num++) {
+                    if (in_array($rowLabel, $coupleRows, true)) {
+                        $seatType = 'COUPLE';
+                        $coupleCount++;
+                    } elseif (in_array($rowLabel, $vipRows, true)) {
+                        $seatType = 'VIP';
+                        $vipCount++;
+                    } else {
+                        $seatType = 'NORMAL';
+                        $normalCount++;
+                    }
+
+                    Seat::create([
+                        'room_id'     => $room->room_id,
+                        'seat_number' => $num,
+                        'row_label'   => $rowLabel,
+                        'seat_type'   => $seatType,
+                    ]);
                 }
-
-                Seat::create([
-                    'room_id'     => $room->room_id,
-                    'seat_number' => $num,
-                    'row_label'   => $rowLabel,
-                    'seat_type'   => $seatType,
-                ]);
             }
-        }
+        });
 
         $seats = Seat::with('room.cinema')
             ->where('room_id', $room->room_id)
@@ -105,7 +245,7 @@ class SeatController extends Controller
         return $this->respond($response, 'Seats generated successfully');
     }
 
-    // ========== GET /seats/row-labels?rows=10 ==========
+    // GET /seats/row-labels?rows=10
     public function rowLabels(Request $request)
     {
         if ($resp = $this->ensureAdmin()) return $resp;
@@ -122,6 +262,43 @@ class SeatController extends Controller
             'numberOfRows' => $rows,
             'labels'       => $labels,
         ];
+
+        return $this->respond($data);
+    }
+    // Dùng ở FE booking để vẽ sơ đồ ghế
+    // ========== GET /seats/layout?showtimeId=... ==========
+    public function layout(Request $request)
+    {
+        // chấp nhận cả showtime_id lẫn showtimeId cho tiện
+        $showtimeId = $request->query('showtime_id') ?? $request->query('showtimeId');
+
+        if (!$showtimeId) {
+            return $this->respond(null, 'showtime_id is required', 400);
+        }
+
+        $rows = ShowtimeSeat::query()
+            ->join('seats', 'seats.seat_id', '=', 'showtime_seats.seat_id')
+            ->where('showtime_seats.showtime_id', $showtimeId)
+            ->select(
+                'seats.seat_id',
+                'seats.row_label',
+                'seats.seat_number',
+                'seats.seat_type',
+                'showtime_seats.status'
+            )
+            ->orderBy('seats.row_label')
+            ->orderBy('seats.seat_number')
+            ->get();
+
+        $data = $rows->map(function ($r) {
+            return [
+                'seatId' => (string) $r->seat_id,
+                'row'    => $r->row_label,
+                'number' => (int) $r->seat_number,
+                'type'   => $r->seat_type,
+                'status' => $r->status,
+            ];
+        })->all();
 
         return $this->respond($data);
     }

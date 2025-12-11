@@ -2,33 +2,30 @@
 
 namespace App\Models;
 
-use App\Enums\SeatStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
-class ShowtimeSeat extends Model
+class SeatLock extends Model
 {
     use HasFactory;
 
-    protected $table = 'showtime_seats';
-    protected $primaryKey = 'showtime_seat_id';   // ✅ PK đúng
+    protected $table = 'seat_locks';
+    protected $primaryKey = 'seat_lock_id';   // PK dạng UUID
     public $incrementing = false;
     protected $keyType = 'string';
 
     protected $fillable = [
         'showtime_id',
-        'seat_id',
-        'row_label',
-        'seat_number',
-        'seat_type',
-        'status',
-        'price',
-        'price_breakdown',
+        'lock_owner_id',      // UUID user hoặc sessionId
+        'lock_owner_type',    // USER / GUEST_SESSION
+        'lock_key',           // chuỗi random dùng để release
+        'expires_at',
+        'status',             // nếu trong DB có cột status
     ];
 
     protected $casts = [
-        'status' => SeatStatus::class,
+        'expires_at' => 'datetime',
     ];
 
     protected static function boot()
@@ -42,13 +39,16 @@ class ShowtimeSeat extends Model
         });
     }
 
+    // ===== RELATIONSHIPS =====
+
     public function showtime()
     {
         return $this->belongsTo(Showtime::class, 'showtime_id', 'showtime_id');
     }
 
-    public function seat()
+    public function lockSeats()
     {
-        return $this->belongsTo(Seat::class, 'seat_id', 'seat_id');
+        // bảng seat_lock_seats, PK là seat_lock_seat_id, FK seat_lock_id
+        return $this->hasMany(SeatLockSeat::class, 'seat_lock_id', 'seat_lock_id');
     }
 }
