@@ -21,7 +21,7 @@ class SessionHelper
     {
         // 1. Check JWT authentication
         $user = Auth::guard('api')->user();
-        
+
         if ($user) {
             return SessionContext::forUser($user->user_id);
         }

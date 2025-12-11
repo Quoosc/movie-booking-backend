@@ -25,9 +25,12 @@ class MomoService
 {
     public function __construct(
         protected Payment                $paymentModel,
-        protected BookingService         $bookingService,
-        protected CheckoutLifecycleService $checkoutLifecycleService,
     ) {}
+
+    protected function checkoutLifecycleService(): CheckoutLifecycleService
+    {
+        return app(CheckoutLifecycleService::class);
+    }
 
     protected function partnerCode(): string
     {
@@ -62,7 +65,7 @@ class MomoService
     {
         return DB::transaction(function () use ($request) {
             /** @var Booking $booking */
-            $booking = $this->bookingService->getBookingById($request->bookingId);
+            $booking = app(BookingService::class)->getBookingById($request->bookingId);
 
             if ($booking->status !== BookingStatus::PENDING_PAYMENT) {
                 throw new CustomException(
@@ -229,7 +232,7 @@ class MomoService
                 'expected' => $expected,
                 'received' => $amountStr
             ]);
-            $this->checkoutLifecycleService->handleFailedPayment($payment, 'Momo amount mismatch');
+            $this->checkoutLifecycleService()->handleFailedPayment($payment, 'Momo amount mismatch');
             return IpnResponse::amountInvalid();
         }
 
@@ -247,7 +250,7 @@ class MomoService
             }
 
             Log::info("Momo IPN: Processing successful payment {$payment->id}, transId: {$transId}");
-            $this->checkoutLifecycleService->handleSuccessfulPayment($payment, (float) $payment->amount, $transId);
+            $this->checkoutLifecycleService()->handleSuccessfulPayment($payment, (float) $payment->amount, $transId);
             return IpnResponse::ok();
         }
 
@@ -256,7 +259,7 @@ class MomoService
             'resultCode' => $resultCode,
             'message' => $message
         ]);
-        $this->checkoutLifecycleService->handleFailedPayment($payment, "Momo error: {$message}");
+        $this->checkoutLifecycleService()->handleFailedPayment($payment, "Momo error: {$message}");
         return IpnResponse::paymentFailed();
     }
 

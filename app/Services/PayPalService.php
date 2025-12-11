@@ -20,21 +20,36 @@ class PayPalService
 {
     public function __construct(
         protected Payment                 $paymentModel,
-        protected BookingService          $bookingService,
-        protected CheckoutLifecycleService $checkoutLifecycleService,
         protected ExchangeRateService     $exchangeRateService,
     ) {}
 
-    protected function returnUrl(): string { return config('paypal.return_url'); }
-    protected function cancelUrl(): string { return config('paypal.cancel_url'); }
-    protected function baseCurrency(): string   { return config('currency.base_currency', 'VND'); }
-    protected function paypalCurrency(): string { return config('currency.paypal_currency', 'USD'); }
+    protected function checkoutLifecycleService(): CheckoutLifecycleService
+    {
+        return app(CheckoutLifecycleService::class);
+    }
+
+    protected function returnUrl(): string
+    {
+        return config('paypal.return_url');
+    }
+    protected function cancelUrl(): string
+    {
+        return config('paypal.cancel_url');
+    }
+    protected function baseCurrency(): string
+    {
+        return config('currency.base_currency', 'VND');
+    }
+    protected function paypalCurrency(): string
+    {
+        return config('currency.paypal_currency', 'USD');
+    }
 
     public function createOrder(InitiatePaymentRequest $request): InitiatePaymentResponse
     {
         return DB::transaction(function () use ($request) {
             /** @var Booking $booking */
-            $booking = $this->bookingService->getBookingById($request->bookingId);
+            $booking = app(BookingService::class)->getBookingById($request->bookingId);
 
             if ($booking->status !== BookingStatus::PENDING_PAYMENT) {
                 throw new CustomException(
@@ -69,7 +84,7 @@ class PayPalService
             $payment->amount          = $conversion->sourceAmount;
             $payment->currency        = $conversion->sourceCurrency;
             $payment->gateway_amount  = $paypalAmount;
-            $payment->gateway_currency= $conversion->targetCurrency;
+            $payment->gateway_currency = $conversion->targetCurrency;
             $payment->exchange_rate   = $conversion->rate;
             $payment->status          = PaymentStatus::PENDING;
             $payment->method          = PaymentMethod::PAYPAL;
@@ -140,10 +155,10 @@ class PayPalService
                     $payment->save();
                 }
 
-                $updated = $this->checkoutLifecycleService
+                $updated = $this->checkoutLifecycleService()
                     ->handleSuccessfulPayment($payment, $capturedAmount, $captureId);
             } else {
-                $updated = $this->checkoutLifecycleService
+                $updated = $this->checkoutLifecycleService()
                     ->handleFailedPayment($payment, 'PayPal capture status: ' . $status);
             }
 

@@ -16,9 +16,17 @@ class RedisLockService
     public function acquireLock(string $lockKey, string $lockValue, int $ttlSeconds): bool
     {
         try {
-            // setnx + expire
-            $result = Redis::set($lockKey, $lockValue, 'NX', 'EX', $ttlSeconds);
-            if ($result === true || $result === 'OK') {
+            // setnx + expire (Predis syntax)
+            $result = Redis::set($lockKey, $lockValue, 'EX', $ttlSeconds, 'NX');
+
+            // Predis trả về Predis\Response\Status object với payload "OK"
+            if ($result instanceof \Predis\Response\Status) {
+                $payload = $result->getPayload();
+                if ($payload === 'OK') {
+                    Log::debug("Lock acquired successfully: {$lockKey}");
+                    return true;
+                }
+            } elseif ($result === true || $result === 'OK') {
                 Log::debug("Lock acquired successfully: {$lockKey}");
                 return true;
             }
@@ -26,7 +34,10 @@ class RedisLockService
             Log::debug("Lock acquisition failed (already exists): {$lockKey}");
             return false;
         } catch (\Throwable $e) {
-            Log::error("Error acquiring lock: {$lockKey}", ['exception' => $e]);
+            Log::error("Error acquiring lock: {$lockKey}", [
+                'exception' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
     }

@@ -21,8 +21,12 @@ class RefundService
         protected Refund                 $refundModel,
         protected PayPalService          $payPalService,
         protected MomoService            $momoService,
-        protected CheckoutLifecycleService $checkoutLifecycleService,
     ) {}
+
+    protected function checkoutLifecycleService(): CheckoutLifecycleService
+    {
+        return app(CheckoutLifecycleService::class);
+    }
 
     public function processRefund(string $paymentId, ?string $reason): Payment
     {
@@ -81,10 +85,9 @@ class RefundService
                     \App\Enums\PaymentMethod::MOMO   => $this->momoService->refundPayment($payment, $amountFloat, $reason),
                 };
 
-                $this->checkoutLifecycleService->handleRefundSuccess($payment, $refund, $gatewayTxnId);
+                $this->checkoutLifecycleService()->handleRefundSuccess($payment, $refund, $gatewayTxnId);
 
                 Log::info("Refund successful for payment {$payment->id}, gateway txn: {$gatewayTxnId}");
-
             } catch (\Throwable $ex) {
                 Log::error("Refund failed for payment {$payment->id}", ['exception' => $ex]);
 
@@ -94,7 +97,7 @@ class RefundService
                 $booking->status = $originalBookingStatus;
                 $booking->save();
 
-                $this->checkoutLifecycleService->handleRefundFailure($payment, $ex->getMessage());
+                $this->checkoutLifecycleService()->handleRefundFailure($payment, $ex->getMessage());
 
                 throw new CustomException('Refund failed: ' . $ex->getMessage(), Response::HTTP_INTERNAL_SERVER_ERROR, $ex);
             }

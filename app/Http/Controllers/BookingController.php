@@ -19,28 +19,47 @@ class BookingController extends Controller
     /**
      * POST /api/bookings/price-preview
      */
-    public function pricePreview(PricePreviewRequest $request, Request $httpRequest): JsonResponse
+    public function pricePreview(PricePreviewRequest $request): JsonResponse
     {
-        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
-        
-        $result = $this->bookingService->calculatePricePreview(
-            $request->validated(),
-            $sessionContext
-        );
+        try {
+            \Illuminate\Support\Facades\Log::info('=== PRICE PREVIEW START ===', $request->all());
 
-        return response()->json([
-            'code' => 200,
-            'data' => $result,
-        ]);
+            $sessionContext = $this->sessionHelper->extractSessionContext($request);
+            \Illuminate\Support\Facades\Log::info('Session context extracted', ['context' => $sessionContext]);
+
+            $result = $this->bookingService->calculatePricePreview(
+                $request->validated(),
+                $sessionContext
+            );
+
+            \Illuminate\Support\Facades\Log::info('=== PRICE PREVIEW SUCCESS ===', ['result' => $result]);
+
+            return response()->json([
+                'code' => 200,
+                'data' => $result,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('=== PRICE PREVIEW ERROR ===', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'code' => 500,
+                'message' => 'Internal server error: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
      * POST /api/bookings/confirm
      */
-    public function confirmBooking(ConfirmBookingRequest $request, Request $httpRequest): JsonResponse
+    public function confirmBooking(ConfirmBookingRequest $request): JsonResponse
     {
-        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
-        
+        $sessionContext = $this->sessionHelper->extractSessionContext($request);
+
         $result = $this->checkoutService->confirmBooking(
             $request->validated(),
             $sessionContext
@@ -57,10 +76,10 @@ class BookingController extends Controller
      * GET /api/bookings/my-bookings
      * Middleware: auth:api
      */
-    public function getUserBookings(Request $request): JsonResponse
+    public function getUserBookings(): JsonResponse
     {
-        $user = $request->user();
-        
+        $user = request()->user();
+
         $result = $this->bookingService->getUserBookings($user->user_id);
 
         return response()->json([
@@ -73,10 +92,10 @@ class BookingController extends Controller
      * GET /api/bookings/{bookingId}
      * Middleware: auth:api
      */
-    public function getBookingById(string $bookingId, Request $request): JsonResponse
+    public function getBookingById(string $bookingId): JsonResponse
     {
-        $user = $request->user();
-        
+        $user = request()->user();
+
         $result = $this->bookingService->getBookingByIdForUser($bookingId, $user->user_id);
 
         return response()->json([
@@ -89,10 +108,10 @@ class BookingController extends Controller
      * PATCH /api/bookings/{bookingId}/qr
      * Middleware: auth:api
      */
-    public function updateQrCode(string $bookingId, UpdateQrCodeRequest $request, Request $httpRequest): JsonResponse
+    public function updateQrCode(string $bookingId, UpdateQrCodeRequest $request): JsonResponse
     {
-        $user = $httpRequest->user();
-        
+        $user = request()->user();
+
         $result = $this->bookingService->updateQrCode(
             $bookingId,
             $user->user_id,
@@ -106,4 +125,3 @@ class BookingController extends Controller
         ]);
     }
 }
-

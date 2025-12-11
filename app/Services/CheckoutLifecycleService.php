@@ -20,12 +20,15 @@ class CheckoutLifecycleService
         protected Payment     $paymentModel,
         protected ShowtimeSeat $showtimeSeatModel,
         protected UserService $userService,
-        protected BookingService $bookingService,
         protected PayPalService $paypalService,
         protected MomoService $momoService,
-        // dùng Lazy như Java: tránh vòng lặp dependency giữa RefundService & CheckoutLifecycleService
-        protected RefundService $refundService,
     ) {}
+
+    // Lazy load RefundService để tránh circular dependency
+    protected function refundService(): RefundService
+    {
+        return app(RefundService::class);
+    }
 
     /**
      * POST /checkout
@@ -293,7 +296,7 @@ class CheckoutLifecycleService
 
             try {
                 Log::info("Triggering automatic refund for late payment {$payment->id}");
-                $this->refundService->processAutomaticRefund($payment, 'Seats no longer available - booking expired');
+                $this->refundService()->processAutomaticRefund($payment, 'Seats no longer available - booking expired');
             } catch (\Throwable $e) {
                 Log::error("Automatic refund failed for payment {$payment->id}. Manual intervention required.", [
                     'exception' => $e,

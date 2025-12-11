@@ -138,6 +138,39 @@ Route::prefix('promotions')->group(function () {
 
 
 // ======================================================================
+// TEST ROUTE
+// ======================================================================
+Route::post('/test-guest', function () {
+    return ['status' => 'ok', 'message' => 'Guest route working!'];
+});
+
+// ======================================================================
+// BOOKING FLOW: GUEST + USER + ADMIN (sử dụng JWT hoặc X-Session-Id)
+// ======================================================================
+// ====== SEAT LOCKS ======
+Route::prefix('seat-locks')->group(function () {
+    Route::post('/', [SeatLockController::class, 'lockSeats']);
+    Route::get('/availability/showtime/{showtimeId}', [SeatLockController::class, 'checkAvailability']);
+    Route::delete('/showtime/{showtimeId}', [SeatLockController::class, 'releaseSeats']);
+});
+
+// ====== BOOKINGS ======
+Route::prefix('bookings')->group(function () {
+    Route::post('/price-preview', [BookingController::class, 'pricePreview']);
+    Route::post('/confirm',       [BookingController::class, 'confirmBooking']);
+
+    // Chỉ user đăng nhập mới xem được lịch sử
+    Route::middleware('auth.jwt')->group(function () {
+        Route::get('/my-bookings',              [BookingController::class, 'getUserBookings']);
+        Route::get('/{bookingId}',              [BookingController::class, 'getBookingById']);
+        Route::patch('/{bookingId}/qr',         [BookingController::class, 'updateQrCode']);
+    });
+});
+
+// ====== CHECKOUT ======
+Route::post('/checkout', [CheckoutController::class, 'confirmAndInitiate']);
+
+// ======================================================================
 // CÁC ROUTE CẦN ĐĂNG NHẬP (USER, BOOKING, ADMIN ...)
 // ======================================================================
 Route::middleware('auth.jwt')->group(function () {
@@ -170,28 +203,13 @@ Route::middleware('auth.jwt')->group(function () {
     });
 
     // ------------------------------------------------------------------
-    // BOOKINGS (lock seats + create booking + history)
+    // ADMIN: MOVIES (Create / Update / Delete)
     // ------------------------------------------------------------------
-    // ========== BOOKING FLOW ==========
-    // ====== SEAT LOCKS ======
-    Route::prefix('seat-locks')->group(function () {
-        Route::post('/', [SeatLockController::class, 'lockSeats']);
-        Route::get('/availability/showtime/{showtimeId}', [SeatLockController::class, 'checkAvailability']);
-        Route::delete('/showtime/{showtimeId}', [SeatLockController::class, 'releaseSeats']);
+    Route::prefix('movies')->group(function () {
+        Route::post('/', [MovieController::class, 'store']);
+        Route::put('/{movieId}', [MovieController::class, 'update']);
+        Route::delete('/{movieId}', [MovieController::class, 'destroy']);
     });
-
-    // ====== BOOKINGS ======
-    Route::prefix('bookings')->group(function () {
-        Route::post('/price-preview', [BookingController::class, 'pricePreview']);
-        Route::post('/confirm',       [BookingController::class, 'confirmBooking']);
-
-        Route::get('/my-bookings',              [BookingController::class, 'getUserBookings']);
-        Route::get('/{bookingId}',              [BookingController::class, 'getBookingById']);
-        Route::patch('/{bookingId}/qr',         [BookingController::class, 'updateQrCode']);
-    });
-
-    // ====== CHECKOUT ======
-    Route::post('/checkout', [CheckoutController::class, 'confirmAndInitiate']);
 
 
     // ========== PAYMENTS (MOMO + PAYPAL + REFUND) ==========
@@ -219,15 +237,6 @@ Route::middleware('auth.jwt')->group(function () {
             // POST /api/payments/{paymentId}/refund
             Route::post('{paymentId}/refund', [RefundController::class, 'refund']);
         });
-    });
-
-    // ------------------------------------------------------------------
-    // ADMIN MOVIES (Create / Update / Delete)
-    // ------------------------------------------------------------------
-    Route::prefix('movies')->group(function () {
-        Route::post('/', [MovieController::class, 'store']);
-        Route::put('/{movieId}', [MovieController::class, 'update']);
-        Route::delete('/{movieId}', [MovieController::class, 'destroy']);
     });
 
     // ===== ADMIN SEATS =====

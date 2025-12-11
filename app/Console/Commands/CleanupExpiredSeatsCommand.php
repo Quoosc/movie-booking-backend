@@ -38,7 +38,7 @@ class CleanupExpiredSeatsCommand extends Command
         try {
             DB::transaction(function () {
                 $now = Carbon::now();
-                
+
                 // Find all expired locks
                 $expiredLocks = SeatLock::where('expires_at', '<=', $now)
                     ->with('seatLockSeats.showtimeSeat')
@@ -84,7 +84,6 @@ class CleanupExpiredSeatsCommand extends Command
             });
 
             return Command::SUCCESS;
-
         } catch (\Exception $e) {
             $this->error("Error during cleanup: {$e->getMessage()}");
             Log::error('Cleanup expired locks failed', [

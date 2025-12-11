@@ -96,7 +96,7 @@ class CheckoutService
         return DB::transaction(function () use ($requestData, $sessionContext) {
             // 1. Confirm booking first
             $bookingResponse = $this->confirmBooking($requestData, $sessionContext);
-            
+
             $bookingId = $bookingResponse['bookingId'];
             $paymentMethod = $requestData['paymentMethod'];
             $amount = $bookingResponse['finalPrice'];

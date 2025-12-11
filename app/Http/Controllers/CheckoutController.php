@@ -18,10 +18,10 @@ class CheckoutController extends Controller
     /**
      * POST /api/checkout
      */
-    public function confirmAndInitiate(CheckoutPaymentRequest $request, Request $httpRequest): JsonResponse
+    public function confirmAndInitiate(CheckoutPaymentRequest $request): JsonResponse
     {
-        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
-        
+        $sessionContext = $this->sessionHelper->extractSessionContext($request);
+
         $result = $this->checkoutService->confirmBookingAndInitiatePayment(
             $request->validated(),
             $sessionContext
@@ -34,4 +34,3 @@ class CheckoutController extends Controller
         ], 201);
     }
 }
-

@@ -94,7 +94,7 @@ class BookingService
             // 7. Check seats có status = AVAILABLE không
             $unavailableSeats = [];
             foreach ($showtimeSeats as $seat) {
-                if ($seat->status !== SeatStatus::AVAILABLE->value) {
+                if ($seat->status !== SeatStatus::AVAILABLE) {
                     $unavailableSeats[] = $seat->showtime_seat_id;
                 }
             }
@@ -150,11 +150,17 @@ class BookingService
                     continue;
                 }
 
+                // Fetch ticket type
+                $ticketType = \App\Models\TicketType::find($seatData['ticketTypeId']);
+                if (!$ticketType) {
+                    continue;
+                }
+
                 // Calculate price với ticket type modifier
                 $basePrice = (float) $showtimeSeat->price;
                 $finalPrice = $this->ticketTypeService->applyTicketTypeModifier(
                     $basePrice,
-                    $seatData['ticketTypeId']
+                    $ticketType
                 );
 
                 $seatLockSeat = new SeatLockSeat([
@@ -249,13 +255,13 @@ class BookingService
             $seatId = $seat->showtime_seat_id;
 
             switch ($seat->status) {
-                case SeatStatus::AVAILABLE->value:
+                case SeatStatus::AVAILABLE:
                     $availableSeats[] = $seatId;
                     break;
-                case SeatStatus::LOCKED->value:
+                case SeatStatus::LOCKED:
                     $lockedSeats[] = $seatId;
                     break;
-                case SeatStatus::BOOKED->value:
+                case SeatStatus::BOOKED:
                     $bookedSeats[] = $seatId;
                     break;
             }

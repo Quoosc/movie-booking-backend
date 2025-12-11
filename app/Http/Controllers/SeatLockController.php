@@ -18,10 +18,10 @@ class SeatLockController extends Controller
     /**
      * POST /api/seat-locks
      */
-    public function lockSeats(LockSeatsRequest $request, Request $httpRequest): JsonResponse
+    public function lockSeats(LockSeatsRequest $request): JsonResponse
     {
-        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
-        
+        $sessionContext = $this->sessionHelper->extractSessionContext($request);
+
         $result = $this->bookingService->lockSeats($request->validated(), $sessionContext);
 
         return response()->json([
@@ -34,10 +34,10 @@ class SeatLockController extends Controller
     /**
      * DELETE /api/seat-locks/showtime/{showtimeId}
      */
-    public function releaseSeats(string $showtimeId, Request $httpRequest): JsonResponse
+    public function releaseSeats(string $showtimeId): JsonResponse
     {
-        $sessionContext = $this->sessionHelper->extractSessionContext($httpRequest);
-        
+        $sessionContext = $this->sessionHelper->extractSessionContext(request());
+
         $this->bookingService->releaseSeats(
             $sessionContext->getLockOwnerId(),
             $showtimeId
@@ -52,10 +52,10 @@ class SeatLockController extends Controller
     /**
      * GET /api/seat-locks/availability/showtime/{showtimeId}
      */
-    public function checkAvailability(string $showtimeId, Request $httpRequest): JsonResponse
+    public function checkAvailability(string $showtimeId): JsonResponse
     {
-        $sessionContext = $this->sessionHelper->extractSessionContextOptional($httpRequest);
-        
+        $sessionContext = $this->sessionHelper->extractSessionContextOptional(request());
+
         $result = $this->bookingService->checkAvailability($showtimeId, $sessionContext);
 
         return response()->json([
@@ -65,4 +65,3 @@ class SeatLockController extends Controller
         ]);
     }
 }
-
