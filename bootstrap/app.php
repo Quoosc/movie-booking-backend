@@ -18,6 +18,14 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth.jwt' => JwtAuthMiddleware::class,
             'role' => \App\Http\Middleware\CheckRole::class,
         ]);
+
+        // Enable CORS globally
+        $middleware->use([
+            \Illuminate\Http\Middleware\HandleCors::class,
+        ]);
+
+        // Remove any global auth middleware from api group
+        $middleware->removeFromGroup('api', [\Illuminate\Auth\Middleware\Authenticate::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
