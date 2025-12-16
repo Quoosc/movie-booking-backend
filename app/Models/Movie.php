@@ -33,7 +33,6 @@ class Movie extends Model
         'language',
     ];
 
-    // 🔑 Tự generate UUID cho movie_id khi tạo mới
     protected static function boot()
     {
         parent::boot();
@@ -45,7 +44,7 @@ class Movie extends Model
         });
     }
 
-    // 🔗 Quan hệ với showtimes
+
     public function showtimes()
     {
         return $this->hasMany(Showtime::class, 'movie_id', 'movie_id');

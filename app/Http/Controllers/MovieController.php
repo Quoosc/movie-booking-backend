@@ -42,7 +42,7 @@ class MovieController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'title'       => 'required|string|max:255',
+            'title'       => ['required', 'string', 'max:255', Rule::unique('movies', 'title')],
             'genre'       => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'duration'    => 'required|integer|min:1',
@@ -84,7 +84,7 @@ class MovieController extends Controller
         $movie = Movie::findOrFail($movieId);
 
         $data = $request->validate([
-            'title'              => ['sometimes', 'string', 'max:255', Rule::unique('movies', 'title')->ignore($movie->id)],
+            'title'              => ['sometimes', 'string', 'max:255', Rule::unique('movies', 'title')->ignore($movie->getKey(), $movie->getKeyName())],
             'genre'              => ['sometimes', 'nullable', 'string', 'max:255'],
             'description'        => ['sometimes', 'nullable', 'string'],
             'duration'           => ['sometimes', 'integer', 'min:1'],

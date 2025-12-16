@@ -19,7 +19,12 @@ class Cinema extends Model
         'name',
         'address',
         'hotline',
-        'status',      // nếu có
+        'status',
+        'is_active',
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
     ];
 
     protected static function boot()

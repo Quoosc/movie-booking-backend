@@ -93,9 +93,10 @@ class CinemaController extends Controller
         }
 
         $data = $request->validate([
-            'name'    => 'required|string|max:255',
-            'address' => 'required|string|max:255',
-            'hotline' => 'required|string|max:30',
+            'name'     => 'required|string|max:255',
+            'address'  => 'required|string|max:255',
+            'hotline'  => 'required|string|max:30',
+            'isActive' => 'sometimes|boolean',
         ]);
 
         $cinema = new Cinema();
@@ -103,15 +104,11 @@ class CinemaController extends Controller
         $cinema->name      = $data['name'];
         $cinema->address   = $data['address'];
         $cinema->hotline   = $data['hotline'];
-        $cinema->status    = 'ACTIVE'; // optional, nếu có cột status
+        $cinema->is_active = $data['isActive'] ?? true;
+        $cinema->status    = $cinema->is_active ? 'ACTIVE' : 'INACTIVE';
         $cinema->save();
 
-        return $this->respond([
-            'cinemaId' => $cinema->cinema_id,
-            'name'     => $cinema->name,
-            'address'  => $cinema->address,
-            'hotline'  => $cinema->hotline,
-        ], 'OK', Response::HTTP_CREATED);
+        return $this->respond(new CinemaResource($cinema), 'Cinema created', Response::HTTP_CREATED);
     }
 
     // ========== ADMIN: PUT /cinemas/{cinemaId} ==========
@@ -122,20 +119,19 @@ class CinemaController extends Controller
         $cinema = Cinema::findOrFail($cinemaId);
 
         $data = $request->validate([
-            'name'        => 'sometimes|required|string|max:255',
-            'address'     => 'sometimes|required|string|max:255',
-            'city'        => 'nullable|string|max:100',
-            'phoneNumber' => 'nullable|string|max:30',
-            'description' => 'nullable|string',
-            'isActive'    => 'boolean',
+            'name'     => 'sometimes|required|string|max:255',
+            'address'  => 'sometimes|required|string|max:255',
+            'hotline'  => 'sometimes|required|string|max:30',
+            'isActive' => 'sometimes|boolean',
         ]);
 
-        if (array_key_exists('name', $data))        $cinema->name         = $data['name'];
-        if (array_key_exists('address', $data))     $cinema->address      = $data['address'];
-        if (array_key_exists('city', $data))        $cinema->city         = $data['city'];
-        if (array_key_exists('phoneNumber', $data)) $cinema->phone_number = $data['phoneNumber'];
-        if (array_key_exists('description', $data)) $cinema->description  = $data['description'];
-        if (array_key_exists('isActive', $data))    $cinema->is_active    = $data['isActive'];
+        if (array_key_exists('name', $data))     $cinema->name     = $data['name'];
+        if (array_key_exists('address', $data))  $cinema->address  = $data['address'];
+        if (array_key_exists('hotline', $data))  $cinema->hotline  = $data['hotline'];
+        if (array_key_exists('isActive', $data)) {
+            $cinema->is_active = $data['isActive'];
+            $cinema->status    = $data['isActive'] ? 'ACTIVE' : 'INACTIVE';
+        }
 
         $cinema->save();
 
