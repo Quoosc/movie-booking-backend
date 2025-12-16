@@ -27,7 +27,7 @@ class MembershipTier extends Model
 
     protected $casts = [
         'min_points'     => 'integer',
-        'discount_value' => 'decimal:2',
+        'discount_value' => 'float',  // Cast as float to ensure number type in JSON
         'is_active'      => 'boolean',
     ];
 

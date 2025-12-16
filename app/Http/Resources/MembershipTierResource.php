@@ -12,11 +12,11 @@ class MembershipTierResource extends JsonResource
         return [
             'membershipTierId' => $this->membership_tier_id,
             'name'             => $this->name,
-            'minPoints'        => $this->min_points,
+            'minPoints'        => (int) $this->min_points,        // Ensure integer type
             'discountType'     => $this->discount_type,
-            'discountValue'    => $this->discount_value,
+            'discountValue'    => (float) $this->discount_value,  // Ensure float type (number in JSON)
             'description'      => $this->description,
-            'isActive'         => $this->is_active,
+            'isActive'         => (bool) $this->is_active,        // Ensure boolean type
             'createdAt'        => $this->created_at,
             'updatedAt'        => $this->updated_at,
         ];

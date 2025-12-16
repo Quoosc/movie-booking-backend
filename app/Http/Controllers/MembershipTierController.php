@@ -13,6 +13,15 @@ class MembershipTierController extends Controller
         private MembershipTierService $membershipTierService
     ) {}
 
+    protected function respond($data = null, string $message = 'OK', int $code = 200)
+    {
+        return response()->json([
+            'code'    => $code,
+            'message' => $message,
+            'data'    => $data,
+        ], $code);
+    }
+
     // POST /api/membership-tiers
     public function store(Request $request)
     {
@@ -27,9 +36,7 @@ class MembershipTierController extends Controller
 
         $tier = $this->membershipTierService->addMembershipTier($data);
 
-        return (new MembershipTierResource($tier))
-            ->response()
-            ->setStatusCode(201);
+        return $this->respond(new MembershipTierResource($tier), 'OK', 201);
     }
 
     // PUT /api/membership-tiers/{id}
@@ -46,7 +53,7 @@ class MembershipTierController extends Controller
 
         $tier = $this->membershipTierService->updateMembershipTier($id, $data);
 
-        return new MembershipTierResource($tier);
+        return $this->respond(new MembershipTierResource($tier));
     }
 
     // PATCH /api/membership-tiers/{id}/deactivate
@@ -54,7 +61,7 @@ class MembershipTierController extends Controller
     {
         $this->membershipTierService->deactivateMembershipTier($id);
 
-        return response()->json(null, 204);
+        return $this->respond(null, 'Deactivated', 204);
     }
 
     // DELETE /api/membership-tiers/{id}
@@ -62,7 +69,7 @@ class MembershipTierController extends Controller
     {
         $this->membershipTierService->deleteMembershipTier($id);
 
-        return response()->json(null, 204);
+        return $this->respond(null, 'Deleted', 204);
     }
 
     // GET /api/membership-tiers/{id}
@@ -70,7 +77,7 @@ class MembershipTierController extends Controller
     {
         $tier = $this->membershipTierService->getMembershipTier($id);
 
-        return new MembershipTierResource($tier);
+        return $this->respond(new MembershipTierResource($tier));
     }
 
     // GET /api/membership-tiers/name/{name}
@@ -78,7 +85,7 @@ class MembershipTierController extends Controller
     {
         $tier = $this->membershipTierService->getMembershipTierByName($name);
 
-        return new MembershipTierResource($tier);
+        return $this->respond(new MembershipTierResource($tier));
     }
 
     // GET /api/membership-tiers
@@ -86,7 +93,7 @@ class MembershipTierController extends Controller
     {
         $tiers = $this->membershipTierService->getAllMembershipTiers();
 
-        return MembershipTierResource::collection($tiers);
+        return $this->respond(MembershipTierResource::collection($tiers));
     }
 
     // GET /api/membership-tiers/active
@@ -94,6 +101,6 @@ class MembershipTierController extends Controller
     {
         $tiers = $this->membershipTierService->getActiveMembershipTiers();
 
-        return MembershipTierResource::collection($tiers);
+        return $this->respond(MembershipTierResource::collection($tiers));
     }
 }
