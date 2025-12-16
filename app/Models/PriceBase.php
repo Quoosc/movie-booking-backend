@@ -22,7 +22,7 @@ class PriceBase extends Model
     ];
 
     protected $casts = [
-        'base_price' => 'decimal:2',
+        'base_price' => 'float',
         'is_active'  => 'boolean',
     ];
 

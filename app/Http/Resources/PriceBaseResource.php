@@ -9,12 +9,12 @@ class PriceBaseResource extends JsonResource
     public function toArray($request)
     {
         return [
-            'id'         => $this->id,
-            'name'       => $this->name,
-            'basePrice'  => $this->base_price,
-            'isActive'   => $this->is_active,
-            'createdAt'  => $this->created_at,
-            'updatedAt'  => $this->updated_at,
+            'priceBaseId' => $this->id,
+            'name'        => $this->name,
+            'basePrice'   => (float) $this->base_price,
+            'isActive'    => (bool) $this->is_active,
+            'createdAt'   => $this->created_at,
+            'updatedAt'   => $this->updated_at,
         ];
     }
 }

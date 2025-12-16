@@ -25,7 +25,7 @@ class PriceModifier extends Model
     ];
 
     protected $casts = [
-        'modifier_value' => 'decimal:2',
+        'modifier_value' => 'float',
         'is_active'      => 'boolean',
     ];
 

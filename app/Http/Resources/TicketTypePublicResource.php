@@ -9,10 +9,10 @@ class TicketTypePublicResource extends JsonResource
     public function toArray($request)
     {
         return [
-            'ticketTypeId' => $this->id,
+            'ticketTypeId' => (string) $this->id,
             'code'         => $this->code,
             'label'        => $this->label,
-            'price'        => $this->price ?? null, // set trong service
+            'price'        => $this->price !== null ? (float) $this->price : null,
         ];
     }
 }

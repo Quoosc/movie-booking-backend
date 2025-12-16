@@ -5,70 +5,102 @@ namespace App\Http\Controllers;
 use App\Http\Resources\PriceBaseResource;
 use App\Services\PriceBaseService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Symfony\Component\HttpFoundation\Response;
 
 class PriceBaseController extends Controller
 {
     public function __construct(private PriceBaseService $priceBaseService) {}
 
-    // POST /api/price-base
-    public function store(Request $request)
+    // ======= COMMON RESPONSE =======
+    protected function respond($data = null, string $message = 'OK', int $code = 200)
     {
-        $data = $request->validate([
-            'name'       => 'required|string|max:255',
-            'basePrice' => 'required|numeric',
-            'isActive'  => 'nullable|boolean',
-        ]);
-
-        $priceBase = $this->priceBaseService->addPriceBase($data);
-
-        return (new PriceBaseResource($priceBase))
-            ->response()
-            ->setStatusCode(201); // y chang Spring: HttpStatus.CREATED
+        return response()->json([
+            'code'    => $code,
+            'message' => $message,
+            'data'    => $data,
+        ], $code);
     }
 
-    // PUT /api/price-base/{id}
-    public function update(string $id, Request $request)
+    protected function ensureAdmin()
     {
-        $data = $request->validate([
-            'name'      => 'nullable|string|max:255',
-            'isActive' => 'nullable|boolean',
-        ]);
+        $user = Auth::user();
 
-        $priceBase = $this->priceBaseService->updatePriceBase($id, $data);
+        if (!$user || $user->role !== 'ADMIN') {
+            return $this->respond(null, 'Admin access required', Response::HTTP_FORBIDDEN);
+        }
 
-        return new PriceBaseResource($priceBase); // 200 OK
+        return null;
     }
 
-    // DELETE /api/price-base/{id}
-    public function destroy(string $id)
-    {
-        $this->priceBaseService->deletePriceBase($id);
-
-        // Spring trả 200 + body rỗng
-        return response()->json(null, 200);
-    }
-
-    // GET /api/price-base/{id}
-    public function show(string $id)
-    {
-        $priceBase = $this->priceBaseService->getPriceBase($id);
-
-        return new PriceBaseResource($priceBase);
-    }
-
-    // GET /api/price-base
+    // ========== PUBLIC: GET /api/price-base ==========
     public function index()
     {
         $items = $this->priceBaseService->getAllPriceBases();
 
-        return PriceBaseResource::collection($items);
+        return $this->respond(PriceBaseResource::collection($items));
     }
 
-    // GET /api/price-base/active
+    // ========== PUBLIC: GET /api/price-base/{id} ==========
+    public function show(string $id)
+    {
+        $priceBase = $this->priceBaseService->getPriceBase($id);
+
+        return $this->respond(new PriceBaseResource($priceBase));
+    }
+
+    // ========== PUBLIC: GET /api/price-base/active ==========
     public function getActive()
     {
         $priceBase = $this->priceBaseService->getActiveBasePrice();
 
-        return new PriceBaseResource($priceBase);
+        return $this->respond(new PriceBaseResource($priceBase));
+    }
+
+    // ========== ADMIN: POST /api/price-base ==========
+    public function store(Request $request)
+    {
+        if ($resp = $this->ensureAdmin()) {
+            return $resp;
+        }
+
+        $data = $request->validate([
+            'name'      => 'required|string|max:255',
+            'basePrice' => 'required|numeric|min:0.01',
+            'isActive'  => 'sometimes|boolean',
+        ]);
+
+        $priceBase = $this->priceBaseService->addPriceBase($data);
+
+        return $this->respond(new PriceBaseResource($priceBase), 'Price base created', Response::HTTP_CREATED);
+    }
+
+    // ========== ADMIN: PUT /api/price-base/{id} ==========
+    public function update(string $id, Request $request)
+    {
+        if ($resp = $this->ensureAdmin()) {
+            return $resp;
+        }
+
+        $data = $request->validate([
+            'name'     => 'sometimes|required|string|max:255',
+            'isActive' => 'sometimes|boolean',
+        ]);
+
+        $priceBase = $this->priceBaseService->updatePriceBase($id, $data);
+
+        return $this->respond(new PriceBaseResource($priceBase), 'Price base updated');
+    }
+
+    // ========== ADMIN: DELETE /api/price-base/{id} ==========
+    public function destroy(string $id)
+    {
+        if ($resp = $this->ensureAdmin()) {
+            return $resp;
+        }
+
+        $this->priceBaseService->deletePriceBase($id);
+
+        return $this->respond(null, 'Price base deleted');
     }
 }

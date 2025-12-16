@@ -25,7 +25,7 @@ class TicketType extends Model
     ];
 
     protected $casts = [
-        'modifier_value' => 'decimal:2',
+        'modifier_value' => 'float',
         'active' => 'boolean',
         'sort_order' => 'integer',
     ];
