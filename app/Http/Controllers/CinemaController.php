@@ -212,7 +212,7 @@ class CinemaController extends Controller
 
         $room->load('cinema');
 
-        return $this->respond(new RoomResource($room), 'Room created', Response::HTTP_CREATED);
+        return $this->respond(new RoomResource($room), 'OK', Response::HTTP_CREATED);
     }
 
     // ========== ADMIN: PUT /cinemas/rooms/{roomId} ==========
@@ -237,7 +237,7 @@ class CinemaController extends Controller
         $room->save();
         $room->load('cinema');
 
-        return $this->respond(new RoomResource($room), 'Room updated');
+        return $this->respond(new RoomResource($room), 'OK');
     }
 
     // ========== ADMIN: DELETE /cinemas/rooms/{roomId} ==========
@@ -266,6 +266,8 @@ class CinemaController extends Controller
     // POST /api/cinemas/snacks
     public function storeSnack(Request $request)
     {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
         $data = $request->validate([
             'cinemaId'          => 'required|uuid|exists:cinemas,cinema_id',
             'name'              => 'required|string|max:255',
@@ -278,14 +280,14 @@ class CinemaController extends Controller
 
         $snack = $this->cinemaService->addSnack($data);
 
-        return (new SnackResource($snack))
-            ->response()
-            ->setStatusCode(201);
+        return $this->respond(new SnackResource($snack), 'OK', Response::HTTP_CREATED);
     }
 
     // PUT /api/cinemas/snacks/{snackId}
     public function updateSnack(string $snackId, Request $request)
     {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
         $data = $request->validate([
             'name'              => 'sometimes|string|max:255',
             'description'       => 'sometimes|nullable|string',
@@ -297,15 +299,17 @@ class CinemaController extends Controller
 
         $snack = $this->cinemaService->updateSnack($snackId, $data);
 
-        return new SnackResource($snack);
+        return $this->respond(new SnackResource($snack));
     }
 
     // DELETE /api/cinemas/snacks/{snackId}
     public function deleteSnack(string $snackId)
     {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
         $this->cinemaService->deleteSnack($snackId);
 
-        return response()->json(null, 200);
+        return $this->respond(null, 'Snack deleted');
     }
 
     // GET /api/cinemas/snacks/{snackId}
@@ -313,15 +317,17 @@ class CinemaController extends Controller
     {
         $snack = $this->cinemaService->getSnack($snackId);
 
-        return new SnackResource($snack);
+        return $this->respond(new SnackResource($snack));
     }
 
     // GET /api/cinemas/snacks  (admin list tất cả snack)
     public function getAllSnacks()
     {
+        if ($resp = $this->ensureAdmin()) return $resp;
+
         $snacks = $this->cinemaService->getAllSnacks();
 
-        return SnackResource::collection($snacks);
+        return $this->respond(SnackResource::collection($snacks));
     }
 
     // GET /api/cinemas/{cinemaId}/snacks  (public dùng cho booking)
@@ -329,6 +335,6 @@ class CinemaController extends Controller
     {
         $snacks = $this->cinemaService->getSnacksByCinema($cinemaId);
 
-        return SnackResource::collection($snacks);
+        return $this->respond(SnackResource::collection($snacks));
     }
 }

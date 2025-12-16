@@ -205,6 +205,12 @@ Route::middleware('auth.jwt')->group(function () {
         Route::put('/profile', [UsersController::class, 'updateProfile']);
         Route::patch('/password', [UsersController::class, 'updatePassword']);
         Route::get('/loyalty', [UsersController::class, 'getLoyalty']);
+
+        // Admin-only user management endpoints
+        Route::get('/', [UsersController::class, 'listAllUsers']);                    // GET /api/users
+        Route::get('/{userId}', [UsersController::class, 'getUserById']);             // GET /api/users/{userId}
+        Route::patch('/{userId}/role', [UsersController::class, 'updateUserRole']);   // PATCH /api/users/{userId}/role
+        Route::delete('/{userId}', [UsersController::class, 'deleteUser']);           // DELETE /api/users/{userId}
     });
 
     // ------------------------------------------------------------------

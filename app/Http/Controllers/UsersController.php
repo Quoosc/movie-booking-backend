@@ -121,4 +121,61 @@ class UsersController extends Controller
             $this->mapUserToProfile($user)
         );
     }
+
+    // GET /users/{userId} - Admin only
+    public function getUserById($userId)
+    {
+        $user = User::where('user_id', $userId)->first();
+
+        if (!$user) {
+            return $this->respond(null, 'User not found', 404);
+        }
+
+        return $this->respond($this->mapUserToProfile($user));
+    }
+
+    // GET /users - Admin only, list all users
+    public function listAllUsers()
+    {
+        $users = User::all();
+
+        $mappedUsers = $users->map(function ($user) {
+            return $this->mapUserToProfile($user);
+        })->toArray();
+
+        return $this->respond($mappedUsers);
+    }
+
+    // PATCH /users/{userId}/role - Admin only
+    public function updateUserRole($userId, Request $request)
+    {
+        $user = User::where('user_id', $userId)->first();
+
+        if (!$user) {
+            return $this->respond(null, 'User not found', 404);
+        }
+
+        $data = $request->validate([
+            'role' => 'required|string|in:USER,ADMIN',
+        ]);
+
+        $user->role = $data['role'];
+        $user->save();
+
+        return $this->respond($this->mapUserToProfile($user));
+    }
+
+    // DELETE /users/{userId} - Admin only
+    public function deleteUser($userId)
+    {
+        $user = User::where('user_id', $userId)->first();
+
+        if (!$user) {
+            return $this->respond(null, 'User not found', 404);
+        }
+
+        $user->delete();
+
+        return $this->respond('User deleted successfully');
+    }
 }
