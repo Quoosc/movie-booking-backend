@@ -8,7 +8,8 @@ class PaymentResponse
         public string  $paymentId,
         public ?string $bookingId,
         public ?string $bookingStatus,
-        public ?string $qrPayload,
+        public ?string $paymentStatus = null,
+        public ?string $qrPayload = null,
     ) {
     }
 
@@ -18,6 +19,7 @@ class PaymentResponse
             'paymentId'     => $this->paymentId,
             'bookingId'     => $this->bookingId,
             'bookingStatus' => $this->bookingStatus,
+            'paymentStatus' => $this->paymentStatus,
             'qrPayload'     => $this->qrPayload,
         ];
     }

@@ -26,20 +26,25 @@ class PaymentController extends Controller
         $data = $request->validate([
             'bookingId' => 'required|uuid|exists:bookings,booking_id',
             'paymentMethod' => 'required|in:MOMO,PAYPAL',
+            'amount' => 'required|numeric|min:0',
         ]);
 
         $method = PaymentMethod::from($data['paymentMethod']);
+        $paymentRequest = new \App\DTO\Payments\InitiatePaymentRequest(
+            bookingId: $data['bookingId'],
+            amount: (float) $data['amount']
+        );
 
-        if ($method === PaymentMethod::MOMO) {
-            $response = $this->momoService->createOrder($data['bookingId']);
-        } else {
-            $response = $this->paypalService->createOrder($data['bookingId']);
-        }
+        $response = $method === PaymentMethod::MOMO
+            ? $this->momoService->createOrder($paymentRequest)
+            : $this->paypalService->createOrder($paymentRequest);
 
         return response()->json([
-            'code' => 200,
+            'paymentId' => $response->paymentId,
+            'orderId' => $response->paypalOrderId ?? $response->momoOrderId,
+            'txnRef' => $response->paypalOrderId ?? $response->momoOrderId,
+            'paymentUrl' => $response->approvalUrl,
             'message' => 'Payment initiated',
-            'data' => $response,
         ]);
     }
 
@@ -50,25 +55,20 @@ class PaymentController extends Controller
     public function capturePayment(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'orderId' => 'required|string',
+            'transactionId' => 'required|string',
             'paymentMethod' => 'required|in:MOMO,PAYPAL',
         ]);
 
         $method = PaymentMethod::from($data['paymentMethod']);
 
         if ($method === PaymentMethod::PAYPAL) {
-            $response = $this->paypalService->captureOrder($data['orderId']);
+            $response = $this->paypalService->captureOrder($data['transactionId']);
 
-            return response()->json([
-                'code' => 200,
-                'message' => 'Payment captured',
-                'data' => $response,
-            ]);
+            return response()->json($response->toArray());
         }
 
         // Momo auto-captures via IPN
         return response()->json([
-            'code' => 400,
             'message' => 'Momo payments are captured automatically via IPN',
         ], 400);
     }

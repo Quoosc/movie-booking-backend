@@ -164,7 +164,14 @@ class PayPalService
                     ->handleFailedPayment($payment, 'PayPal capture status: ' . $status);
             }
 
-            return \App\Transformers\PaymentTransformer::toPaymentResponse($updated);
+            $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($updated);
+            return new PaymentResponse(
+                paymentId: $resp['paymentId'],
+                bookingId: $resp['bookingId'],
+                bookingStatus: $resp['bookingStatus'],
+                paymentStatus: $resp['status'] ?? null,
+                qrPayload: $resp['qrPayload'] ?? null,
+            );
         });
     }
 
