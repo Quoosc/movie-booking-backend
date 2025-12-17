@@ -37,4 +37,9 @@ class BookingSeat extends Model
             }
         });
     }
+
+    public function ticketType()
+    {
+        return $this->belongsTo(TicketType::class, 'ticket_type_id', 'id');
+    }
 }

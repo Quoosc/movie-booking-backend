@@ -11,7 +11,7 @@ class BookingSnack extends Model
     use HasFactory, HasUuids;
 
     protected $table = 'booking_snacks';
-    protected $primaryKey = 'booking_snack_id'; // nếu migration của bạn dùng tên khác thì sửa lại
+    protected $primaryKey = 'id'; // matches migration: `uuid('id')->primary()`
     public $incrementing = false;
     protected $keyType = 'string';
 
