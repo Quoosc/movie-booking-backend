@@ -24,11 +24,10 @@ class SeatLockController extends Controller
 
         $result = $this->bookingService->lockSeats($request->validated(), $sessionContext);
 
-        return response()->json([
-            'code' => 201,
-            'message' => 'Seats locked successfully',
-            'data' => $result,
-        ], 201)->header('X-Lock-Owner-Type', $sessionContext->getLockOwnerType()->value);
+        return response()->json(
+            $result,
+            201
+        )->header('X-Lock-Owner-Type', $sessionContext->getLockOwnerType()->value);
     }
 
     /**
@@ -43,10 +42,7 @@ class SeatLockController extends Controller
             $showtimeId
         );
 
-        return response()->json([
-            'code' => 200,
-            'message' => 'Seat locks released',
-        ]);
+        return response()->json([], 200);
     }
 
     /**
@@ -58,10 +54,6 @@ class SeatLockController extends Controller
 
         $result = $this->bookingService->checkAvailability($showtimeId, $sessionContext);
 
-        return response()->json([
-            'code' => 200,
-            'message' => 'Seat availability retrieved',
-            'data' => $result,
-        ]);
+        return response()->json($result);
     }
 }

@@ -27,10 +27,6 @@ class CheckoutController extends Controller
             $sessionContext
         );
 
-        return response()->json([
-            'code' => 201,
-            'message' => 'Booking confirmed and payment initiated',
-            'data' => $result,
-        ], 201);
+        return response()->json($result, 201);
     }
 }

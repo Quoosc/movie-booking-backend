@@ -21,36 +21,14 @@ class BookingController extends Controller
      */
     public function pricePreview(PricePreviewRequest $request): JsonResponse
     {
-        try {
-            \Illuminate\Support\Facades\Log::info('=== PRICE PREVIEW START ===', $request->all());
+        $sessionContext = $this->sessionHelper->extractSessionContext($request);
 
-            $sessionContext = $this->sessionHelper->extractSessionContext($request);
-            \Illuminate\Support\Facades\Log::info('Session context extracted', ['context' => $sessionContext]);
+        $result = $this->bookingService->calculatePricePreview(
+            $request->validated(),
+            $sessionContext
+        );
 
-            $result = $this->bookingService->calculatePricePreview(
-                $request->validated(),
-                $sessionContext
-            );
-
-            \Illuminate\Support\Facades\Log::info('=== PRICE PREVIEW SUCCESS ===', ['result' => $result]);
-
-            return response()->json([
-                'code' => 200,
-                'data' => $result,
-            ]);
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('=== PRICE PREVIEW ERROR ===', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'code' => 500,
-                'message' => 'Internal server error: ' . $e->getMessage(),
-            ], 500);
-        }
+        return response()->json($result);
     }
 
     /**
@@ -65,11 +43,7 @@ class BookingController extends Controller
             $sessionContext
         );
 
-        return response()->json([
-            'code' => 201,
-            'message' => 'Booking confirmed',
-            'data' => $result,
-        ], 201);
+        return response()->json($result, 200);
     }
 
     /**
@@ -82,10 +56,7 @@ class BookingController extends Controller
 
         $result = $this->bookingService->getUserBookings($user->user_id);
 
-        return response()->json([
-            'code' => 200,
-            'data' => $result,
-        ]);
+        return response()->json($result);
     }
 
     /**
@@ -98,10 +69,7 @@ class BookingController extends Controller
 
         $result = $this->bookingService->getBookingByIdForUser($bookingId, $user->user_id);
 
-        return response()->json([
-            'code' => 200,
-            'data' => $result,
-        ]);
+        return response()->json($result);
     }
 
     /**
@@ -118,10 +86,6 @@ class BookingController extends Controller
             $request->validated()['qrCodeUrl']
         );
 
-        return response()->json([
-            'code' => 200,
-            'message' => 'QR code updated',
-            'data' => $result,
-        ]);
+        return response()->json($result);
     }
 }
