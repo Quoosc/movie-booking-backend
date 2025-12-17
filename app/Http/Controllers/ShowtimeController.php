@@ -6,15 +6,26 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ShowtimeResource;
 use App\Models\Movie;
 use App\Models\Room;
+use App\Models\Seat;
 use App\Models\Showtime;
+use App\Models\ShowtimeSeat;
+use App\Enums\SeatStatus;
+use App\Services\PriceCalculationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 class ShowtimeController extends Controller
 {
-    // ======== COMMON RESPONSE (giống các controller khác) ========
+    private PriceCalculationService $priceCalculationService;
+
+    public function __construct(PriceCalculationService $priceCalculationService)
+    {
+        $this->priceCalculationService = $priceCalculationService;
+    }
+
     protected function respond($data = null, string $message = 'OK', int $code = 200)
     {
         return response()->json([
@@ -23,8 +34,6 @@ class ShowtimeController extends Controller
             'data'    => $data,
         ], $code);
     }
-
-    // ======== HELPER TÌM ENTITY ========
 
     protected function findShowtimeOrFail(string $showtimeId): Showtime
     {
@@ -41,10 +50,6 @@ class ShowtimeController extends Controller
         return Movie::findOrFail($movieId);
     }
 
-    /**
-     * Validate không bị trùng giờ chiếu trong cùng phòng
-     * Clone logic validateNoOverlap bên Spring
-     */
     protected function validateNoOverlap(?string $showtimeId, string $roomId, Carbon $startTime, int $movieDurationMinutes): void
     {
         $endTime = (clone $startTime)->addMinutes($movieDurationMinutes);
@@ -59,30 +64,23 @@ class ShowtimeController extends Controller
         $existing = $query->get();
 
         foreach ($existing as $st) {
-            if (!$st->movie) {
-                continue;
-            }
+            if (!$st->movie) continue;
 
-            /** @var Carbon $stStart */
             $stStart = $st->start_time instanceof Carbon
                 ? $st->start_time
                 : Carbon::parse($st->start_time);
 
             $stEnd = (clone $stStart)->addMinutes($st->movie->duration);
 
-            // khoảng [stStart, stEnd] overlap với [startTime, endTime] ?
             if ($stStart < $endTime && $stEnd > $startTime) {
-                abort(
-                    Response::HTTP_BAD_REQUEST,
-                    'This showtime overlaps with another showtime in the same room'
-                );
+                abort(Response::HTTP_BAD_REQUEST, 'This showtime overlaps with another showtime in the same room');
             }
         }
     }
 
-    // =================================================================
-    //  ADMIN ONLY – POST /showtimes  (AddShowtimeRequest)
-    // =================================================================
+    // =========================================================
+    // ADMIN – POST /showtimes
+    // =========================================================
     public function store(Request $request)
     {
         $data = $request->validate([
@@ -97,7 +95,6 @@ class ShowtimeController extends Controller
 
         $startTime = Carbon::parse($data['startTime']);
 
-        // validate không trùng
         $this->validateNoOverlap(null, $room->room_id, $startTime, $movie->duration);
 
         $showtime = Showtime::create([
@@ -107,8 +104,39 @@ class ShowtimeController extends Controller
             'start_time' => $startTime,
         ]);
 
-        // TODO: generate showtime_seats giống showtimeSeatService.generateShowtimeSeats()
-        // Tạm thời chưa code phần này thì comment lại
+        // ✅ AUTO-GENERATE showtime_seats từ seats của room
+        DB::transaction(function () use ($showtime) {
+            $roomSeats = Seat::query()
+                ->where('room_id', $showtime->room_id)
+                ->orderBy('row_label')
+                ->orderBy('seat_number')
+                ->get();
+
+            if ($roomSeats->isEmpty()) {
+                abort(400, 'Room has no seats. Please generate seats before creating showtime.');
+            }
+
+            $now = now();
+            $rows = [];
+
+            foreach ($roomSeats as $seat) {
+                [$price, $breakdown] = $this->priceCalculationService
+                    ->calculatePriceWithBreakdown($showtime, $seat);
+
+                $rows[] = [
+                    'showtime_seat_id' => (string) Str::uuid(),
+                    'seat_id'          => $seat->seat_id,
+                    'showtime_id'      => $showtime->showtime_id,
+                    'seat_status'      => SeatStatus::AVAILABLE->value,
+                    'price'            => $price,
+                    'price_breakdown'  => $breakdown,
+                    'created_at'       => $now,
+                    'updated_at'       => $now,
+                ];
+            }
+
+            DB::table('showtime_seats')->insert($rows);
+        });
 
         $showtime->load(['room', 'movie']);
 
@@ -119,9 +147,10 @@ class ShowtimeController extends Controller
         );
     }
 
-    // =================================================================
-    //  ADMIN – PUT /showtimes/{showtimeId} (UpdateShowtimeRequest)
-    // =================================================================
+    // =========================================================
+    // ADMIN – PUT /showtimes/{showtimeId}
+    // (Giữ nguyên logic update của bạn — chưa đụng tới)
+    // =========================================================
     public function update(string $showtimeId, Request $request)
     {
         $showtime = $this->findShowtimeOrFail($showtimeId);
@@ -133,53 +162,38 @@ class ShowtimeController extends Controller
             'startTime' => 'nullable|date',
         ]);
 
-        $newRoomId = $data['roomId']    ?? $showtime->room_id;
-        $newMovieId = $data['movieId']  ?? $showtime->movie_id;
+        $newRoomId = $data['roomId'] ?? $showtime->room_id;
+        $newMovieId = $data['movieId'] ?? $showtime->movie_id;
         $newStartTime = isset($data['startTime'])
             ? Carbon::parse($data['startTime'])
-            : ($showtime->start_time instanceof Carbon
-                ? $showtime->start_time
-                : Carbon::parse($showtime->start_time));
+            : ($showtime->start_time instanceof Carbon ? $showtime->start_time : Carbon::parse($showtime->start_time));
 
-        // movie dùng để tính duration
         $movie = isset($data['movieId'])
             ? $this->findMovieOrFail($newMovieId)
             : $this->findMovieOrFail($showtime->movie_id);
 
-        // Nếu room/movie/startTime có đổi -> check trùng
         if (
             $newRoomId !== $showtime->room_id ||
             $newMovieId !== $showtime->movie_id ||
-            !$newStartTime->equalTo(
-                $showtime->start_time instanceof Carbon
-                    ? $showtime->start_time
-                    : Carbon::parse($showtime->start_time)
-            )
+            !$newStartTime->equalTo($showtime->start_time instanceof Carbon ? $showtime->start_time : Carbon::parse($showtime->start_time))
         ) {
             $this->validateNoOverlap($showtimeId, $newRoomId, $newStartTime, $movie->duration);
         }
 
-        if (isset($data['roomId'])) {
-            $showtime->room_id = $data['roomId'];
-        }
-        if (isset($data['movieId'])) {
-            $showtime->movie_id = $data['movieId'];
-        }
-        if (isset($data['format'])) {
-            $showtime->format = $data['format'];
-        }
-        if (isset($data['startTime'])) {
-            $showtime->start_time = $newStartTime;
-        }
+        if (isset($data['roomId'])) $showtime->room_id = $data['roomId'];
+        if (isset($data['movieId'])) $showtime->movie_id = $data['movieId'];
+        if (isset($data['format'])) $showtime->format = $data['format'];
+        if (isset($data['startTime'])) $showtime->start_time = $newStartTime;
 
         $showtime->save();
         $showtime->load(['room', 'movie']);
 
-        return $this->respond(
-            new ShowtimeResource($showtime),
-            'Showtime updated'
-        );
+        return $this->respond(new ShowtimeResource($showtime), 'Showtime updated');
     }
+
+    // (các hàm còn lại index/show/byMovie... giữ nguyên như bạn)
+
+
 
     // =================================================================
     //  ADMIN – DELETE /showtimes/{showtimeId}

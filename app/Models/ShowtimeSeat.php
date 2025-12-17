@@ -12,17 +12,14 @@ class ShowtimeSeat extends Model
     use HasFactory;
 
     protected $table = 'showtime_seats';
-    protected $primaryKey = 'showtime_seat_id';   // ✅ PK đúng
+    protected $primaryKey = 'showtime_seat_id';
     public $incrementing = false;
     protected $keyType = 'string';
 
     protected $fillable = [
         'showtime_id',
         'seat_id',
-        'row_label',
-        'seat_number',
-        'seat_type',
-        'seat_status',  // Database column is 'seat_status'
+        'seat_status',
         'price',
         'price_breakdown',
     ];
@@ -31,13 +28,12 @@ class ShowtimeSeat extends Model
         'seat_status' => SeatStatus::class,
     ];
 
-    // Accessor to map 'status' to 'seat_status' for backwards compatibility
+    // Backward compat: status <-> seat_status
     public function getStatusAttribute()
     {
         return $this->seat_status;
     }
 
-    // Mutator to map 'status' to 'seat_status'
     public function setStatusAttribute($value)
     {
         $this->attributes['seat_status'] = $value;

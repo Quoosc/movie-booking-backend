@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 
+
 class BookingService
 {
     protected int $lockDurationMinutes;
@@ -108,9 +109,17 @@ class BookingService
 
             // 8. Generate lockToken
             $lockToken = Str::uuid()->toString();
+            // lockDurationMinutes is in minutes; convert to seconds
             $ttlSeconds = $this->lockDurationMinutes * 60;
 
             // 9. Acquire Redis distributed lock cho từng seat
+            Log::info('Attempting to acquire distributed locks for seats', [
+                'showtimeId' => $showtimeId,
+                'seatIds' => $showtimeSeatIds,
+                'lockToken' => $lockToken,
+                'ttlSeconds' => $ttlSeconds,
+            ]);
+
             $acquired = $this->redisLockService->acquireMultipleSeatsLock(
                 $showtimeId,
                 $showtimeSeatIds,
@@ -119,6 +128,29 @@ class BookingService
             );
 
             if (!$acquired) {
+                // Log per-seat lock status for debugging
+                foreach ($showtimeSeatIds as $seatId) {
+                    try {
+                        $key = $this->redisLockService->generateSeatLockKey($showtimeId, $seatId);
+                        $isLocked = $this->redisLockService->isSeatLocked($showtimeId, $seatId);
+                        $ttl = $this->redisLockService->getLockTtl($key);
+                        $value = $this->redisLockService->getLockValue($key);
+                        Log::warning('Seat lock acquisition failed - current lock state', [
+                            'showtimeId' => $showtimeId,
+                            'seatId' => $seatId,
+                            'lockKey' => $key,
+                            'isLocked' => $isLocked,
+                            'ttl' => $ttl,
+                            'lockValue' => $value,
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::error('Failed to inspect seat lock status', [
+                            'seatId' => $seatId,
+                            'exception' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
                 throw new SeatLockedException(
                     'Failed to acquire locks for selected seats',
                     $showtimeSeatIds

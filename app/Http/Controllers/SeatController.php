@@ -5,15 +5,13 @@ namespace App\Http\Controllers;
 use App\Http\Resources\SeatResource;
 use App\Models\Room;
 use App\Models\Seat;
-use App\Models\Showtime;
 use App\Models\ShowtimeSeat;
-use App\Models\SeatLockSeat;
-use App\Enums\SeatStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 use App\Services\SeatLayoutService;
+use Illuminate\Support\Facades\Log;
 
 class SeatController extends Controller
 {
@@ -70,7 +68,7 @@ class SeatController extends Controller
         return $this->respond(new SeatResource($seat));
     }
 
-    // POST /seats  (tạo 1 ghế đơn lẻ – ít xài vì đã có generate)
+    // POST /seats
     public function store(Request $request)
     {
         if ($resp = $this->ensureAdmin()) return $resp;
@@ -161,7 +159,7 @@ class SeatController extends Controller
         return $this->respond($data);
     }
 
-    // POST /seats/generate   (bạn đã có – giữ nguyên, mình chỉ copy lại cho đủ file)
+    // POST /seats/generate
     public function generate(Request $request)
     {
         if ($resp = $this->ensureAdmin()) return $resp;
@@ -265,18 +263,18 @@ class SeatController extends Controller
 
         return $this->respond($data);
     }
-    // Dùng ở FE booking để vẽ sơ đồ ghế
-    // ========== GET /seats/layout?showtimeId=... ==========
+
+    // ==========================================================
+    // PUBLIC: GET /seats/layout?showtime_id=... hoặc showtimeId=...
+    // ==========================================================
     public function layout(Request $request)
     {
-        // chấp nhận cả showtime_id lẫn showtimeId cho tiện
         $showtimeId = $request->query('showtime_id') ?? $request->query('showtimeId');
 
         if (!$showtimeId) {
             return $this->respond(null, 'showtime_id or showtimeId is required', 400);
         }
 
-        // Validate UUID format
         if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $showtimeId)) {
             return $this->respond(null, 'Invalid showtimeId format', 400);
         }
@@ -286,11 +284,13 @@ class SeatController extends Controller
                 ->join('seats', 'seats.seat_id', '=', 'showtime_seats.seat_id')
                 ->where('showtime_seats.showtime_id', $showtimeId)
                 ->select(
+                    'showtime_seats.showtime_seat_id',
                     'seats.seat_id',
                     'seats.row_label',
                     'seats.seat_number',
                     'seats.seat_type',
-                    'showtime_seats.seat_status as status'
+                    'showtime_seats.seat_status',
+                    'showtime_seats.price'
                 )
                 ->orderBy('seats.row_label')
                 ->orderBy('seats.seat_number')
@@ -298,17 +298,21 @@ class SeatController extends Controller
 
             $data = $rows->map(function ($r) {
                 return [
+
+                    'showtimeSeatId' => (string) $r->showtime_seat_id,
                     'seatId' => (string) $r->seat_id,
+
                     'row'    => $r->row_label,
                     'number' => (int) $r->seat_number,
                     'type'   => $r->seat_type,
-                    'status' => $r->status,
+                    'status' => $r->seat_status,
+                    'price'  => $r->price !== null ? (float) $r->price : 0,
                 ];
             })->all();
 
             return $this->respond($data);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Seat layout error: ' . $e->getMessage(), [
+            Log::error('Seat layout error: ' . $e->getMessage(), [
                 'showtimeId' => $showtimeId,
                 'exception' => $e,
             ]);

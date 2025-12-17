@@ -32,7 +32,12 @@ class PriceCalculationService
             throw new \RuntimeException('No active base price configured');
         }
 
-        $basePriceValue = (float) $priceBase->basePrice;
+        $basePriceValue = (float) (
+            $priceBase->basePrice
+            ?? $priceBase->base_price
+            ?? $priceBase->amount
+            ?? 0
+        );
         $finalPrice     = $basePriceValue;
 
         Log::debug('Starting price calculation. Base price: {price}', ['price' => $finalPrice]);

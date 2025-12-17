@@ -86,6 +86,19 @@ class RedisLockService
         }
     }
 
+    /**
+     * Get the raw value stored for a lock key (for debugging)
+     */
+    public function getLockValue(string $lockKey): ?string
+    {
+        try {
+            return Redis::get($lockKey);
+        } catch (\Throwable $e) {
+            Log::error("Error getting lock value: {$lockKey}", ['exception' => $e]);
+            return null;
+        }
+    }
+
     public function extendLock(string $lockKey, string $lockValue, int $additionalSeconds): bool
     {
         try {
@@ -121,7 +134,7 @@ class RedisLockService
         $acquiredKeys = [];
 
         foreach ($seatIds as $seatId) {
-            $lockKey = "seat-lock:{$showtimeId}:{$seatId}";
+            $lockKey = $this->generateSeatLockKey($showtimeId, $seatId);
 
             // SET NX EX - Set if not exists with expiration
             $acquired = $this->acquireLock($lockKey, $lockToken, $ttl);
@@ -151,7 +164,7 @@ class RedisLockService
     public function releaseSeatsLock(string $showtimeId, array $seatIds, string $lockToken): void
     {
         foreach ($seatIds as $seatId) {
-            $lockKey = "seat-lock:{$showtimeId}:{$seatId}";
+            $lockKey = $this->generateSeatLockKey($showtimeId, $seatId);
             $this->releaseLock($lockKey, $lockToken);
         }
     }
@@ -161,7 +174,7 @@ class RedisLockService
      */
     public function isSeatLocked(string $showtimeId, string $seatId): bool
     {
-        $lockKey = "seat-lock:{$showtimeId}:{$seatId}";
+        $lockKey = $this->generateSeatLockKey($showtimeId, $seatId);
         return Redis::exists($lockKey) > 0;
     }
 
