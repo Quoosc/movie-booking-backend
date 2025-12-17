@@ -5,6 +5,7 @@ namespace App\Exceptions;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Throwable;
 use Illuminate\Support\Facades\Log;
+use App\Exceptions\{CustomException, ResourceNotFoundException, SeatLockedException, LockExpiredException, MaxSeatsExceededException};
 
 class Handler extends ExceptionHandler
 {
@@ -32,5 +33,43 @@ class Handler extends ExceptionHandler
                 'trace' => $e->getTraceAsString(),
             ]);
         });
+    }
+
+    public function render($request, Throwable $e)
+    {
+        if ($e instanceof CustomException) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], $e->getStatusCode());
+        }
+
+        if ($e instanceof ResourceNotFoundException) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 404);
+        }
+
+        if ($e instanceof SeatLockedException) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'unavailableSeats' => $e->getUnavailableSeats(),
+            ], $e->getCode() ?: 409);
+        }
+
+        if ($e instanceof LockExpiredException) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], $e->getCode() ?: 410);
+        }
+
+        if ($e instanceof MaxSeatsExceededException) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'maxSeats' => $e->maxSeats,
+                'requestedSeats' => $e->requestedSeats,
+            ], 400);
+        }
+
+        return parent::render($request, $e);
     }
 }

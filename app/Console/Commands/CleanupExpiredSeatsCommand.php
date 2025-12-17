@@ -2,8 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Models\{SeatLock, ShowtimeSeat};
+use App\Models\{SeatLock, ShowtimeSeat, Booking};
 use App\Enums\SeatStatus;
+use App\Enums\BookingStatus;
 use App\Services\RedisLockService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,7 @@ class CleanupExpiredSeatsCommand extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Delete expired seat locks, update showtime_seats status to AVAILABLE, and release Redis locks';
+    protected $description = 'Delete expired seat locks, update showtime_seats status to AVAILABLE, release Redis locks, and expire pending bookings';
 
     public function __construct(
         protected RedisLockService $redisLockService
@@ -33,60 +34,63 @@ class CleanupExpiredSeatsCommand extends Command
      */
     public function handle(): int
     {
-        $this->info('Starting cleanup of expired seat locks...');
+        $this->info('Starting cleanup of expired seat locks and bookings...');
 
         try {
             DB::transaction(function () {
                 $now = Carbon::now();
 
-                // Find all expired locks
+                // Cleanup expired locks
                 $expiredLocks = SeatLock::where('expires_at', '<=', $now)
                     ->with('seatLockSeats.showtimeSeat')
                     ->get();
 
-                if ($expiredLocks->isEmpty()) {
-                    $this->info('No expired locks found.');
-                    return;
-                }
-
-                $this->info("Found {$expiredLocks->count()} expired locks to clean up.");
-
                 foreach ($expiredLocks as $lock) {
-                    // Get all showtime seat IDs from this lock
                     $showtimeSeatIds = $lock->seatLockSeats->pluck('showtime_seat_id')->toArray();
 
                     if (!empty($showtimeSeatIds)) {
-                        // Update showtime_seats status back to AVAILABLE
                         ShowtimeSeat::whereIn('showtime_seat_id', $showtimeSeatIds)
-                            ->update(['status' => SeatStatus::AVAILABLE]);
+                            ->update(['seat_status' => SeatStatus::AVAILABLE->value]);
 
-                        $this->line("  → Updated {count($showtimeSeatIds)} seats to AVAILABLE for lock {$lock->seat_lock_id}");
-
-                        // Release Redis locks by deleting keys
                         foreach ($showtimeSeatIds as $showtimeSeatId) {
-                            $redisKey = "seat_lock:{$lock->showtime_id}:{$showtimeSeatId}";
+                            $redisKey = $this->redisLockService->generateSeatLockKey(
+                                $lock->showtime_id,
+                                $showtimeSeatId
+                            );
                             \Illuminate\Support\Facades\Redis::del($redisKey);
                         }
-
-                        $this->line("  → Released Redis locks for lock {$lock->seat_lock_id}");
                     }
 
-                    // Delete seat_lock_seats records
                     $lock->seatLockSeats()->delete();
-
-                    // Delete the seat_lock itself
                     $lock->delete();
-
-                    $this->line("  → Deleted lock {$lock->seat_lock_id}");
                 }
 
-                $this->info("Successfully cleaned up {$expiredLocks->count()} expired locks.");
+                // Expire pending bookings past payment_expires_at
+                $expiredBookings = Booking::where('status', BookingStatus::PENDING_PAYMENT)
+                    ->where('payment_expires_at', '<=', $now)
+                    ->with('bookingSeats')
+                    ->get();
+
+                foreach ($expiredBookings as $booking) {
+                    $seatIds = $booking->bookingSeats->pluck('showtime_seat_id')->toArray();
+
+                    if (!empty($seatIds)) {
+                        ShowtimeSeat::whereIn('showtime_seat_id', $seatIds)
+                            ->update(['seat_status' => SeatStatus::AVAILABLE->value]);
+                    }
+
+                    $booking->status = BookingStatus::EXPIRED;
+                    $booking->qr_payload = null;
+                    $booking->qr_code = null;
+                    $booking->save();
+                }
             });
 
+            $this->info('Cleanup finished.');
             return Command::SUCCESS;
         } catch (\Exception $e) {
             $this->error("Error during cleanup: {$e->getMessage()}");
-            Log::error('Cleanup expired locks failed', [
+            Log::error('Cleanup expired locks/bookings failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
