@@ -3,7 +3,8 @@
 return [
     'lock' => [
         'duration' => [
-            'minutes' => env('BOOKING_LOCK_DURATION_MINUTES', 30),
+            // Spring spec: seat lock TTL is 10 minutes
+            'minutes' => env('BOOKING_LOCK_DURATION_MINUTES', 10),
         ],
     ],
     'max' => [
