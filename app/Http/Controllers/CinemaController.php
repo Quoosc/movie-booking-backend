@@ -326,11 +326,38 @@ class CinemaController extends Controller
         return $this->respond(SnackResource::collection($snacks));
     }
 
-    // GET /api/cinemas/{cinemaId}/snacks  (public dùng cho booking)
+    // GET /api/cinemas/{cinemaId}/snacks  (public dùng cho booking - path param)
     public function getSnacksByCinema(string $cinemaId)
     {
         $snacks = $this->cinemaService->getSnacksByCinema($cinemaId);
 
         return $this->respond(SnackResource::collection($snacks));
+    }
+
+    // GET /api/cinemas/snacks?cinemaId=<uuid> (public - query param)
+    public function getSnacks(Request $request)
+    {
+        try {
+            $cinemaId = $request->query('cinemaId');
+
+            if (!$cinemaId) {
+                return $this->respond(null, 'cinemaId query parameter is required', 400);
+            }
+
+            // Validate UUID format
+            if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $cinemaId)) {
+                return $this->respond(null, 'Invalid cinemaId format', 400);
+            }
+
+            $snacks = $this->cinemaService->getSnacksByCinema($cinemaId);
+
+            return $this->respond(SnackResource::collection($snacks));
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Get snacks error: ' . $e->getMessage(), [
+                'cinemaId' => $cinemaId ?? null,
+                'exception' => $e,
+            ]);
+            return $this->respond(null, 'Server error', 500);
+        }
     }
 }

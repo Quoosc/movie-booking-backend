@@ -273,33 +273,46 @@ class SeatController extends Controller
         $showtimeId = $request->query('showtime_id') ?? $request->query('showtimeId');
 
         if (!$showtimeId) {
-            return $this->respond(null, 'showtime_id is required', 400);
+            return $this->respond(null, 'showtime_id or showtimeId is required', 400);
         }
 
-        $rows = ShowtimeSeat::query()
-            ->join('seats', 'seats.seat_id', '=', 'showtime_seats.seat_id')
-            ->where('showtime_seats.showtime_id', $showtimeId)
-            ->select(
-                'seats.seat_id',
-                'seats.row_label',
-                'seats.seat_number',
-                'seats.seat_type',
-                'showtime_seats.status'
-            )
-            ->orderBy('seats.row_label')
-            ->orderBy('seats.seat_number')
-            ->get();
+        // Validate UUID format
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $showtimeId)) {
+            return $this->respond(null, 'Invalid showtimeId format', 400);
+        }
 
-        $data = $rows->map(function ($r) {
-            return [
-                'seatId' => (string) $r->seat_id,
-                'row'    => $r->row_label,
-                'number' => (int) $r->seat_number,
-                'type'   => $r->seat_type,
-                'status' => $r->status,
-            ];
-        })->all();
+        try {
+            $rows = ShowtimeSeat::query()
+                ->join('seats', 'seats.seat_id', '=', 'showtime_seats.seat_id')
+                ->where('showtime_seats.showtime_id', $showtimeId)
+                ->select(
+                    'seats.seat_id',
+                    'seats.row_label',
+                    'seats.seat_number',
+                    'seats.seat_type',
+                    'showtime_seats.seat_status as status'
+                )
+                ->orderBy('seats.row_label')
+                ->orderBy('seats.seat_number')
+                ->get();
 
-        return $this->respond($data);
+            $data = $rows->map(function ($r) {
+                return [
+                    'seatId' => (string) $r->seat_id,
+                    'row'    => $r->row_label,
+                    'number' => (int) $r->seat_number,
+                    'type'   => $r->seat_type,
+                    'status' => $r->status,
+                ];
+            })->all();
+
+            return $this->respond($data);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Seat layout error: ' . $e->getMessage(), [
+                'showtimeId' => $showtimeId,
+                'exception' => $e,
+            ]);
+            return $this->respond(null, 'Server error', 500);
+        }
     }
 }

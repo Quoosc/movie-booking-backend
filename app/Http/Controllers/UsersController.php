@@ -27,6 +27,7 @@ class UsersController extends Controller
             'email'       => $user->email,
             'username'    => $user->username,
             'phoneNumber' => $user->phoneNumber,
+            'role'        => strtoupper($user->role ?? 'USER'),
             'avatarUrl'   => $user->avatar_url,
             'avatarCloudinaryId' => $user->avatar_cloudinary_id,
             'loyaltyPoints'      => $user->loyalty_points,

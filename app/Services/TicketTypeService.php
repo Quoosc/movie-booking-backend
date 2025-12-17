@@ -86,16 +86,9 @@ class TicketTypeService
 
         foreach ($ticketTypes as $ticketType) {
             $priceWithModifier = $this->applyTicketTypeModifier($referencePrice, $ticketType);
-            $result[] = [
-                'id'            => $ticketType->id,
-                'code'          => $ticketType->code,
-                'label'         => $ticketType->label,
-                'modifier_type' => $ticketType->modifier_type,
-                'modifier_value' => $ticketType->modifier_value,
-                'active'        => $ticketType->active,
-                'sort_order'    => $ticketType->sort_order,
-                'price'         => $priceWithModifier,
-            ];
+            // Add the calculated price as a dynamic attribute on the model
+            $ticketType->calculated_price = $priceWithModifier;
+            $result[] = $ticketType;
         }
 
         return $result;

@@ -22,14 +22,26 @@ class ShowtimeSeat extends Model
         'row_label',
         'seat_number',
         'seat_type',
-        'status',
+        'seat_status',  // Database column is 'seat_status'
         'price',
         'price_breakdown',
     ];
 
     protected $casts = [
-        'status' => SeatStatus::class,
+        'seat_status' => SeatStatus::class,
     ];
+
+    // Accessor to map 'status' to 'seat_status' for backwards compatibility
+    public function getStatusAttribute()
+    {
+        return $this->seat_status;
+    }
+
+    // Mutator to map 'status' to 'seat_status'
+    public function setStatusAttribute($value)
+    {
+        $this->attributes['seat_status'] = $value;
+    }
 
     protected static function boot()
     {

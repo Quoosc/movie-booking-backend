@@ -238,7 +238,7 @@ class MovieController extends Controller
         $endOfDay   = $date->copy()->endOfDay();
 
         $showtimes = Showtime::with(['room.cinema'])
-            ->where('movie_id', $movie->id)
+            ->where('movie_id', $movie->movie_id)
             ->whereBetween('start_time', [$startOfDay, $endOfDay])
             ->orderBy('start_time')
             ->get();
@@ -248,7 +248,7 @@ class MovieController extends Controller
 
         foreach ($showtimes as $st) {
             $cinema = $st->room->cinema;
-            $cinemaId = (string) $cinema->id;
+            $cinemaId = (string) $cinema->cinema_id;
 
             if (!isset($cinemas[$cinemaId])) {
                 $cinemas[$cinemaId] = [
@@ -260,7 +260,7 @@ class MovieController extends Controller
             }
 
             $cinemas[$cinemaId]['showtimes'][] = [
-                'showtimeId' => (string) $st->id,
+                'showtimeId' => (string) $st->showtime_id,
                 'startTime'  => $st->start_time instanceof Carbon
                     ? $st->start_time->toIso8601String()
                     : (string) $st->start_time,
