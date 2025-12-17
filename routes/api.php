@@ -72,6 +72,8 @@ Route::prefix('cinemas')->group(function () {
     // PUBLIC
     Route::get('/', [CinemaController::class, 'index']);
     Route::get('/{cinemaId}/movies', [CinemaController::class, 'moviesByCinema']);
+    // Public snacks lookup by query param to match Spring endpoint: GET /api/cinemas/snacks?cinemaId=...
+    Route::get('/snacks', [CinemaController::class, 'getSnacks']);
     Route::get('/{cinemaId}/snacks', [CinemaController::class, 'getSnacksByCinema']);
 
     // ===== ADMIN (cần token, dùng auth.jwt) =====
@@ -94,7 +96,8 @@ Route::prefix('cinemas')->group(function () {
         Route::put('/snacks/{snackId}', [CinemaController::class, 'updateSnack']);
         Route::delete('/snacks/{snackId}', [CinemaController::class, 'deleteSnack']);
         Route::get('/snacks/{snackId}', [CinemaController::class, 'getSnack']);
-        Route::get('/snacks', [CinemaController::class, 'getAllSnacks']);
+        // Admin-only list of all snacks moved off public path to avoid overriding public endpoint
+        Route::get('/snacks/all', [CinemaController::class, 'getAllSnacks']);
     });
 
     // Đặt SAU cùng để không nuốt /rooms
@@ -151,7 +154,7 @@ Route::post('/test-guest', function () {
 // ====== SEAT LOCKS ======
 Route::prefix('seat-locks')->group(function () {
     Route::post('/', [SeatLockController::class, 'lockSeats']);
-    Route::get('/availability/showtime/{showtimeId}', [SeatLockController::class, 'checkAvailability']);
+    Route::get('/availability/{showtimeId}', [SeatLockController::class, 'checkAvailability']);
     Route::delete('/showtime/{showtimeId}', [SeatLockController::class, 'releaseSeats']);
 });
 
@@ -177,14 +180,12 @@ Route::prefix('payments')->group(function () {
     Route::get('/momo/ipn', [PaymentController::class, 'handleMomoIpnGet']);
     Route::post('/momo/ipn', [PaymentController::class, 'handleMomoIpnPost']);
 
-    // Payment operations (no auth required for initiation)
-    Route::post('/order', [PaymentController::class, 'initiatePayment']);
-    Route::post('/order/capture', [PaymentController::class, 'capturePayment']);
-
-    // Search payments (JWT required)
+    // Payment operations (initiation requires auth)
     Route::middleware('auth.jwt')->group(function () {
+        Route::post('/order', [PaymentController::class, 'initiatePayment']);
         Route::get('/search', [PaymentController::class, 'searchPayments']);
     });
+    Route::post('/order/capture', [PaymentController::class, 'capturePayment']);
 
     // Refund (ADMIN only)
     Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
@@ -261,7 +262,6 @@ Route::middleware('auth.jwt')->group(function () {
         Route::get('/row-labels', [SeatController::class, 'rowLabels']);     // GET /seats/row-labels?rows=10
         Route::post('/generate',   [SeatController::class, 'generate']);     // POST /seats/generate
         Route::get('/room/{roomId}', [SeatController::class, 'getByRoom']);  // GET /seats/room/{roomId}
-        Route::get('/layout',        [SeatController::class, 'layout']);     // GET /seats/layout?showtimeId=...
 
         // CRUD cơ bản cho seat (admin)
         Route::get('/',           [SeatController::class, 'index']);   // GET /seats

@@ -39,7 +39,7 @@ class SessionContext
 
     public function isGuest(): bool
     {
-        return $this->lockOwnerType === LockOwnerType::GUEST;
+        return $this->lockOwnerType === LockOwnerType::GUEST_SESSION;
     }
 
     public function isUser(): bool
@@ -54,6 +54,6 @@ class SessionContext
 
     public static function forGuest(string $sessionId): self
     {
-        return new self($sessionId, LockOwnerType::GUEST, null);
+        return new self($sessionId, LockOwnerType::GUEST_SESSION, null);
     }
 }

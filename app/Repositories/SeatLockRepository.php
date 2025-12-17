@@ -15,7 +15,11 @@ class SeatLockRepository
 
     public function findById(string $id): ?SeatLock
     {
-        return SeatLock::with(['seatLockSeats.showtimeSeat.seat', 'showtime'])
+        return SeatLock::with([
+                'seatLockSeats.showtimeSeat.seat',
+                'seatLockSeats.ticketType',
+                'showtime',
+            ])
             ->find($id);
     }
 

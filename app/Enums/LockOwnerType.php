@@ -5,5 +5,6 @@ namespace App\Enums;
 enum LockOwnerType: string
 {
     case USER = 'USER';
-    case GUEST = 'GUEST';
+    // Match DB enum value for guest sessions to avoid MySQL truncation
+    case GUEST_SESSION = 'GUEST_SESSION';
 }

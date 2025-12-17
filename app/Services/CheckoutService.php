@@ -10,6 +10,7 @@ use App\Repositories\{SeatLockRepository, BookingRepository, ShowtimeSeatReposit
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use App\Services\TicketTypeService;
 
 class CheckoutService
 {
@@ -20,8 +21,10 @@ class CheckoutService
         protected BookingRepository $bookingRepository,
         protected ShowtimeSeatRepository $showtimeSeatRepository,
         protected PriceCalculationService $priceCalculationService,
+        protected TicketTypeService $ticketTypeService,
         protected PayPalService $paypalService,
-        protected MomoService $momoService
+        protected MomoService $momoService,
+        protected RedisLockService $redisLockService
     ) {
         $this->paymentTimeoutMinutes = config('booking.payment.timeout.minutes', 15);
     }
@@ -38,51 +41,51 @@ class CheckoutService
             $snackCombos = $requestData['snackCombos'] ?? [];
             $guestInfo = $requestData['guestInfo'] ?? null;
 
-            // 1. Find và validate seat lock
             $seatLock = $this->seatLockRepository->findById($lockId);
 
             if (!$seatLock) {
                 throw new ResourceNotFoundException('Lock not found or expired');
             }
 
-            // 2. Check lock ownership
             if ($seatLock->lock_owner_id !== $sessionContext->getLockOwnerId()) {
                 throw new CustomException('You do not own this lock', 403);
             }
 
-            // 3. Check lock expiry
             if (!$seatLock->isActive()) {
                 throw new LockExpiredException();
             }
 
-            // 4. Get or create User
+            if ($promotionCode && !$sessionContext->isAuthenticated()) {
+                throw new CustomException('Guests cannot use promotions', 403);
+            }
+
             $user = $this->getOrCreateUser($sessionContext, $guestInfo);
 
-            // 5. Nếu guest => update seatLock->user_id
             if ($sessionContext->isGuest() && $user) {
                 $seatLock->user_id = $user->user_id;
                 $this->seatLockRepository->save($seatLock);
             }
 
-            // 6. Calculate pricing
             $pricingData = $this->calculateBookingPrice(
                 $seatLock,
                 $snackCombos,
                 $promotionCode,
-                $user->user_id ?? null
+                $sessionContext->isAuthenticated() ? $user->user_id : null
             );
 
-            // 7. Create Booking
             $booking = $this->createBooking($user, $seatLock, $pricingData, $snackCombos);
 
-            // 8. Update showtime_seats status = BOOKED
             $seatIds = $seatLock->seatLockSeats->pluck('showtime_seat_id')->toArray();
             $this->showtimeSeatRepository->updateStatusBatch($seatIds, SeatStatus::BOOKED->value);
 
-            // 9. Delete SeatLock
+            $this->redisLockService->releaseMultipleSeatsLock(
+                $seatLock->showtime_id,
+                $seatIds,
+                $seatLock->lock_key
+            );
+
             $this->seatLockRepository->delete($seatLock);
 
-            // 10. Return BookingResponse
             return $this->mapBookingToResponse($booking);
         });
     }
@@ -94,40 +97,26 @@ class CheckoutService
     public function confirmBookingAndInitiatePayment(array $requestData, SessionContext $sessionContext): array
     {
         return DB::transaction(function () use ($requestData, $sessionContext) {
-            // 1. Confirm booking first
             $bookingResponse = $this->confirmBooking($requestData, $sessionContext);
 
             $bookingId = $bookingResponse['bookingId'];
             $paymentMethod = $requestData['paymentMethod'];
             $amount = $bookingResponse['finalPrice'];
 
-            // 2. Initiate payment
-            try {
-                $paymentResult = $this->initiatePayment($bookingId, $paymentMethod, $amount);
+            $paymentResult = $this->initiatePayment($bookingId, $paymentMethod, $amount);
 
-                return [
-                    'bookingId' => $bookingId,
-                    'paymentId' => $paymentResult['paymentId'],
-                    'paymentMethod' => $paymentMethod,
-                    'redirectUrl' => $paymentResult['redirectUrl'],
-                    'message' => 'Booking confirmed and payment initiated',
-                ];
-            } catch (\Exception $e) {
-                // Payment initiation failed => rollback sẽ tự động xảy ra
-                throw new CustomException(
-                    'Failed to initiate payment: ' . $e->getMessage(),
-                    500
-                );
-            }
+            return [
+                'bookingId' => $bookingId,
+                'paymentId' => $paymentResult['paymentId'],
+                'paymentMethod' => $paymentMethod,
+                'redirectUrl' => $paymentResult['paymentUrl'] ?? $paymentResult['redirectUrl'] ?? null,
+                'message' => 'Booking confirmed and payment initiated',
+            ];
         });
     }
 
-    /**
-     * Get or Create User
-     */
     private function getOrCreateUser(SessionContext $sessionContext, ?array $guestInfo): User
     {
-        // Authenticated user
         if ($sessionContext->isAuthenticated()) {
             $user = User::find($sessionContext->getUserId());
             if (!$user) {
@@ -136,29 +125,26 @@ class CheckoutService
             return $user;
         }
 
-        // Guest user
-        if ($guestInfo) {
-            // Check if email exists
-            $existingUser = User::where('email', $guestInfo['email'])->first();
-            if ($existingUser) {
-                return $existingUser;
-            }
-
-            // Create new guest user
-            $user = new User([
-                'user_id' => Str::uuid()->toString(),
-                'username' => $guestInfo['username'],
-                'email' => $guestInfo['email'],
-                'phone_number' => $guestInfo['phoneNumber'] ?? null,
-                'role' => 'GUEST',
-                'password' => bcrypt(Str::random(32)), // Random password
-            ]);
-            $user->save();
-
-            return $user;
+        if (!$guestInfo) {
+            throw new CustomException('Guest information required', 400);
         }
 
-        throw new CustomException('User information required for guests', 400);
+        $existingUser = User::where('email', $guestInfo['email'])->first();
+        if ($existingUser) {
+            return $existingUser;
+        }
+
+        $user = new User([
+            'user_id' => Str::uuid()->toString(),
+            'username' => $guestInfo['fullName'],
+            'email' => $guestInfo['email'],
+            'phoneNumber' => $guestInfo['phoneNumber'] ?? null,
+            'role' => 'GUEST',
+            'password' => bcrypt(Str::random(32)),
+        ]);
+        $user->save();
+
+        return $user;
     }
 
     /**
@@ -170,10 +156,40 @@ class CheckoutService
         ?string $promotionCode,
         ?string $userId
     ): array {
-        // Ticket subtotal
-        $ticketSubtotal = $seatLock->seatLockSeats->sum('price');
+        // Recalculate ticket subtotal using base price + modifiers + ticket type
+        $seatLock->loadMissing([
+            'seatLockSeats.ticketType',
+            'seatLockSeats.showtimeSeat.seat',
+            'showtime',
+        ]);
 
-        // Snack subtotal
+        $ticketSubtotal = 0;
+        $ticketItems = [];
+
+        foreach ($seatLock->seatLockSeats as $lockSeat) {
+            $showtimeSeat = $lockSeat->showtimeSeat;
+            $seat = $showtimeSeat?->seat;
+            $ticketType = $lockSeat->ticketType;
+
+            if (!$showtimeSeat || !$seat) {
+                continue;
+            }
+
+            $basePrice = $this->priceCalculationService->calculatePrice($seatLock->showtime, $seat);
+            $finalPrice = $ticketType
+                ? $this->ticketTypeService->applyTicketTypeModifier($basePrice, $ticketType)
+                : $basePrice;
+
+            $ticketSubtotal += $finalPrice;
+
+            $ticketItems[] = [
+                'seatLockSeatId' => $lockSeat->id,
+                'showtimeSeatId' => $lockSeat->showtime_seat_id,
+                'ticketTypeId' => $lockSeat->ticket_type_id,
+                'price' => $finalPrice,
+            ];
+        }
+
         $snackSubtotal = 0;
         $snackItems = [];
 
@@ -195,7 +211,10 @@ class CheckoutService
 
         $subtotal = $ticketSubtotal + $snackSubtotal;
 
-        // Calculate discounts
+        if ($promotionCode && !$userId) {
+            throw new CustomException('Promotions are available for registered users only', 403);
+        }
+
         $discountResult = $this->priceCalculationService->calculateDiscounts(
             $subtotal,
             $userId,
@@ -211,6 +230,7 @@ class CheckoutService
             'discountValue' => $totalDiscount,
             'discountReason' => $discountReason,
             'finalPrice' => $finalPrice,
+            'ticketItems' => $ticketItems,
             'snackItems' => $snackItems,
             'promotionCode' => $promotionCode,
         ];
@@ -225,7 +245,6 @@ class CheckoutService
         array $pricingData,
         array $snackCombos
     ): Booking {
-        // Create booking
         $booking = new Booking([
             'user_id' => $user->user_id,
             'showtime_id' => $seatLock->showtime_id,
@@ -239,30 +258,31 @@ class CheckoutService
         ]);
         $booking = $this->bookingRepository->create($booking->toArray());
 
-        // Create BookingSeat records
         foreach ($seatLock->seatLockSeats as $seatLockSeat) {
+            // Find recalculated price for this lock seat
+            $ticketItem = collect($pricingData['ticketItems'] ?? [])
+                ->firstWhere('seatLockSeatId', $seatLockSeat->id);
+            $seatPrice = $ticketItem['price'] ?? $seatLockSeat->price;
+
             $bookingSeat = new BookingSeat([
                 'booking_id' => $booking->booking_id,
                 'showtime_seat_id' => $seatLockSeat->showtime_seat_id,
-                'seat_lock_seat_id' => $seatLockSeat->id, // Primary key của SeatLockSeat
+                'seat_lock_seat_id' => $seatLockSeat->id,
                 'ticket_type_id' => $seatLockSeat->ticket_type_id,
-                'price' => $seatLockSeat->price,
+                'price' => $seatPrice,
             ]);
             $bookingSeat->save();
         }
 
-        // Create BookingSnack records
         foreach ($pricingData['snackItems'] as $snackItem) {
             $bookingSnack = new BookingSnack([
                 'booking_id' => $booking->booking_id,
                 'snack_id' => $snackItem['snackId'],
                 'quantity' => $snackItem['quantity'],
-                'unit_price' => $snackItem['unitPrice'],
             ]);
             $bookingSnack->save();
         }
 
-        // Create BookingPromotion record if promotion used
         if (!empty($pricingData['promotionCode'])) {
             $promotion = \App\Models\Promotion::where('code', $pricingData['promotionCode'])->first();
             if ($promotion) {
@@ -293,12 +313,14 @@ class CheckoutService
             case 'PAYPAL':
                 $response = $this->paypalService->createOrder($paymentRequest);
                 return [
+                    'paymentId' => $response->paymentId,
                     'paymentUrl' => $response->approvalUrl,
                     'orderId' => $response->paypalOrderId,
                 ];
             case 'MOMO':
                 $response = $this->momoService->createOrder($paymentRequest);
                 return [
+                    'paymentId' => $response->paymentId,
                     'paymentUrl' => $response->approvalUrl,
                     'orderId' => $response->momoOrderId,
                 ];

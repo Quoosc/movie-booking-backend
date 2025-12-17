@@ -4,16 +4,14 @@ namespace App\Services;
 
 use App\DTO\SessionContext;
 use App\Enums\SeatStatus;
-use App\Enums\LockOwnerType;
 use App\Exceptions\{
     ResourceNotFoundException,
     SeatLockedException,
-    ConcurrentBookingException,
     LockExpiredException,
     MaxSeatsExceededException,
     CustomException
 };
-use App\Models\{SeatLock, SeatLockSeat, ShowtimeSeat, Booking, User};
+use App\Models\{SeatLock, SeatLockSeat, Booking};
 use App\Repositories\{
     SeatLockRepository,
     ShowtimeSeatRepository,
@@ -23,7 +21,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
-
 
 class BookingService
 {
@@ -52,32 +49,18 @@ class BookingService
             $showtimeId = $requestData['showtimeId'];
             $seats = $requestData['seats'];
 
-            // 1. Validate số lượng ghế
             if (count($seats) > $this->maxSeatsPerBooking) {
                 throw new MaxSeatsExceededException($this->maxSeatsPerBooking, count($seats));
             }
 
-            // 2. Tìm existing active locks của lockOwnerId
+            // Enforce single active lock per session by releasing any active locks
             $existingLocks = $this->seatLockRepository
                 ->findAllActiveLocksForOwner($sessionContext->getLockOwnerId());
 
-            // 3. Nếu có lock cho CÙNG showtime => throw ConcurrentBookingException
             foreach ($existingLocks as $lock) {
-                if ($lock->showtime_id === $showtimeId) {
-                    throw new ConcurrentBookingException(
-                        'You already have an active lock for this showtime'
-                    );
-                }
+                $this->releaseSeats($sessionContext->getLockOwnerId(), $lock->showtime_id);
             }
 
-            // 4. Nếu có locks cho KHÁC showtime => release chúng
-            if ($existingLocks->isNotEmpty()) {
-                foreach ($existingLocks as $lock) {
-                    $this->releaseSeats($sessionContext->getLockOwnerId(), $lock->showtime_id);
-                }
-            }
-
-            // 5. Fetch showtime seats
             $showtimeSeatIds = array_column($seats, 'showtimeSeatId');
             $showtimeSeats = $this->showtimeSeatRepository
                 ->findByIdsAndShowtime($showtimeSeatIds, $showtimeId);
@@ -86,13 +69,13 @@ class BookingService
                 throw new ResourceNotFoundException('One or more seats not found');
             }
 
-            // 6. Validate ticket types thuộc showtime
-            $ticketTypeIds = array_column($seats, 'ticketTypeId');
-            foreach ($ticketTypeIds as $ticketTypeId) {
-                $this->ticketTypeService->validateTicketTypeForShowtime($showtimeId, $ticketTypeId);
+            foreach ($seats as $seatData) {
+                $this->ticketTypeService->validateTicketTypeForShowtime(
+                    $showtimeId,
+                    $seatData['ticketTypeId']
+                );
             }
 
-            // 7. Check seats có status = AVAILABLE không
             $unavailableSeats = [];
             foreach ($showtimeSeats as $seat) {
                 if ($seat->status !== SeatStatus::AVAILABLE) {
@@ -102,17 +85,15 @@ class BookingService
 
             if (!empty($unavailableSeats)) {
                 throw new SeatLockedException(
-                    'Some seats are not available',
-                    $unavailableSeats
+                    'Some seats are locked or already booked',
+                    $unavailableSeats,
+                    423
                 );
             }
 
-            // 8. Generate lockToken
             $lockToken = Str::uuid()->toString();
-            // lockDurationMinutes is in minutes; convert to seconds
             $ttlSeconds = $this->lockDurationMinutes * 60;
 
-            // 9. Acquire Redis distributed lock cho từng seat
             Log::info('Attempting to acquire distributed locks for seats', [
                 'showtimeId' => $showtimeId,
                 'seatIds' => $showtimeSeatIds,
@@ -128,7 +109,6 @@ class BookingService
             );
 
             if (!$acquired) {
-                // Log per-seat lock status for debugging
                 foreach ($showtimeSeatIds as $seatId) {
                     try {
                         $key = $this->redisLockService->generateSeatLockKey($showtimeId, $seatId);
@@ -153,11 +133,11 @@ class BookingService
 
                 throw new SeatLockedException(
                     'Failed to acquire locks for selected seats',
-                    $showtimeSeatIds
+                    $showtimeSeatIds,
+                    423
                 );
             }
 
-            // 10. Create SeatLock record
             $seatLock = new SeatLock([
                 'lock_key' => $lockToken,
                 'lock_owner_id' => $sessionContext->getLockOwnerId(),
@@ -168,8 +148,7 @@ class BookingService
             ]);
             $seatLock = $this->seatLockRepository->save($seatLock);
 
-            // 11. Create SeatLockSeat records với calculated prices
-            $seatLockSeats = [];
+            $lockedSeatPayload = [];
             $totalPrice = 0;
 
             foreach ($seats as $seatData) {
@@ -182,13 +161,11 @@ class BookingService
                     continue;
                 }
 
-                // Fetch ticket type
                 $ticketType = \App\Models\TicketType::find($seatData['ticketTypeId']);
                 if (!$ticketType) {
                     continue;
                 }
 
-                // Calculate price với ticket type modifier
                 $basePrice = (float) $showtimeSeat->price;
                 $finalPrice = $this->ticketTypeService->applyTicketTypeModifier(
                     $basePrice,
@@ -203,35 +180,32 @@ class BookingService
                 ]);
                 $seatLockSeat->save();
 
-                $seatLockSeats[] = [
-                    'showtimeSeatId' => $showtimeSeat->showtime_seat_id,
-                    'seatRow' => $showtimeSeat->seat->row_label ?? '',
+                $lockedSeatPayload[] = [
+                    'seatId' => $showtimeSeat->showtime_seat_id,
+                    'rowLabel' => $showtimeSeat->seat->row_label ?? '',
                     'seatNumber' => $showtimeSeat->seat->seat_number ?? 0,
                     'seatType' => $showtimeSeat->seat->seat_type ?? '',
                     'ticketTypeId' => $seatData['ticketTypeId'],
                     'ticketTypeLabel' => $this->ticketTypeService->getTicketTypeLabel($seatData['ticketTypeId']),
-                    'price' => $finalPrice,
+                    'price' => (float) $finalPrice,
                 ];
 
                 $totalPrice += $finalPrice;
             }
 
-            // 12. Update showtime_seats status = LOCKED
             $this->showtimeSeatRepository->updateStatusBatch(
                 $showtimeSeatIds,
                 SeatStatus::LOCKED->value
             );
 
-            // 13. Return LockSeatsResponse
             return [
                 'lockId' => $seatLock->seat_lock_id,
+                'lockKey' => $seatLock->lock_key,
                 'showtimeId' => $showtimeId,
-                'lockOwnerId' => $sessionContext->getLockOwnerId(),
-                'lockOwnerType' => $sessionContext->getLockOwnerType()->value,
-                'lockedSeats' => $seatLockSeats,
-                'totalPrice' => $totalPrice,
+                'lockedSeats' => $lockedSeatPayload,
+                'totalPrice' => (float) $totalPrice,
                 'expiresAt' => $seatLock->expires_at->toIso8601String(),
-                'lockDurationMinutes' => $this->lockDurationMinutes,
+                'remainingSeconds' => $seatLock->getRemainingSeconds(),
                 'message' => 'Seats locked successfully',
             ];
         });
@@ -251,18 +225,18 @@ class BookingService
                 return; // Already released or expired
             }
 
-            // Get seat IDs
             $seatIds = $seatLock->seatLockSeats->pluck('showtime_seat_id')->toArray();
 
-            // Release Redis locks
             $this->redisLockService->releaseMultipleSeatsLock(
                 $showtimeId,
                 $seatIds,
                 $seatLock->lock_key
             );
 
-            // Update showtime_seats status = AVAILABLE
-            $updatedCount = $this->showtimeSeatRepository->updateStatusBatch($seatIds, SeatStatus::AVAILABLE->value);
+            $updatedCount = $this->showtimeSeatRepository->updateStatusBatch(
+                $seatIds,
+                SeatStatus::AVAILABLE->value
+            );
 
             Log::info("Releasing seat locks", [
                 'showtime' => $showtimeId,
@@ -272,7 +246,6 @@ class BookingService
                 'expectedCount' => count($seatIds)
             ]);
 
-            // Delete SeatLock record (cascade delete seatLockSeats)
             $this->seatLockRepository->delete($seatLock);
 
             Log::info("Released seat lock successfully for showtime: {$showtimeId}, owner: {$lockOwnerId}");
@@ -312,10 +285,10 @@ class BookingService
             'availableSeats' => $availableSeats,
             'lockedSeats' => $lockedSeats,
             'bookedSeats' => $bookedSeats,
+            'yourActiveLocks' => [],
             'message' => 'Seat availability retrieved',
         ];
 
-        // Nếu có session => get lock info của user đó
         if ($sessionContext) {
             $seatLock = $this->seatLockRepository->findByLockOwnerIdAndShowtimeId(
                 $sessionContext->getLockOwnerId(),
@@ -323,15 +296,12 @@ class BookingService
             );
 
             if ($seatLock && $seatLock->isActive()) {
-                $myLockedSeats = $seatLock->seatLockSeats->pluck('showtime_seat_id')->toArray();
-
-                $response['sessionLockInfo'] = [
+                $response['yourActiveLocks'][] = [
                     'lockId' => $seatLock->seat_lock_id,
-                    'myLockedSeats' => $myLockedSeats,
+                    'seats' => $seatLock->seatLockSeats->pluck('showtime_seat_id')->toArray(),
+                    'expiresAt' => $seatLock->expires_at->toIso8601String(),
                     'remainingSeconds' => $seatLock->getRemainingSeconds(),
                 ];
-            } else {
-                $response['sessionLockInfo'] = null;
             }
         }
 
@@ -348,27 +318,52 @@ class BookingService
         $promotionCode = $requestData['promotionCode'] ?? null;
         $snacks = $requestData['snacks'] ?? [];
 
-        // Find seat lock
         $seatLock = $this->seatLockRepository->findById($lockId);
 
         if (!$seatLock) {
             throw new ResourceNotFoundException('Lock not found or expired');
         }
 
-        // Validate ownership
         if ($seatLock->lock_owner_id !== $sessionContext->getLockOwnerId()) {
             throw new CustomException('You do not own this lock', 403);
         }
 
-        // Check if active
         if (!$seatLock->isActive()) {
             throw new LockExpiredException();
         }
 
-        // Calculate ticket subtotal
-        $ticketSubtotal = $seatLock->seatLockSeats->sum('price');
+        if ($sessionContext->isGuest() && $promotionCode) {
+            throw new CustomException('Guests cannot use promotions', 403);
+        }
 
-        // Calculate snack subtotal
+        // Recalculate ticket subtotal using base price + modifiers + ticket type (avoid stale lock prices)
+        $seatLock->loadMissing([
+            'seatLockSeats.ticketType',
+            'seatLockSeats.showtimeSeat.seat',
+            'showtime',
+        ]);
+
+        $ticketSubtotal = 0;
+        foreach ($seatLock->seatLockSeats as $lockSeat) {
+            $showtimeSeat = $lockSeat->showtimeSeat;
+            $seat = $showtimeSeat?->seat;
+            $ticketType = $lockSeat->ticketType;
+
+            if (!$showtimeSeat || !$seat) {
+                continue;
+            }
+
+            // Base price includes price modifiers for this seat/showtime
+            $basePrice = $this->priceCalculationService->calculatePrice($seatLock->showtime, $seat);
+
+            // Apply ticket type modifier if available
+            $finalPrice = $ticketType
+                ? $this->ticketTypeService->applyTicketTypeModifier($basePrice, $ticketType)
+                : $basePrice;
+
+            $ticketSubtotal += $finalPrice;
+        }
+
         $snackSubtotal = 0;
         if (!empty($snacks)) {
             foreach ($snacks as $snack) {
@@ -381,10 +376,9 @@ class BookingService
 
         $subtotal = $ticketSubtotal + $snackSubtotal;
 
-        // Calculate discounts
         $discountResult = $this->priceCalculationService->calculateDiscounts(
             $subtotal,
-            $sessionContext->getUserId(),
+            $sessionContext->isAuthenticated() ? $sessionContext->getUserId() : null,
             $promotionCode
         );
 
@@ -392,9 +386,9 @@ class BookingService
         $total = max(0, $subtotal - $discount);
 
         return [
-            'subtotal' => $subtotal,
-            'discount' => $discount,
-            'total' => $total,
+            'subtotal' => (float) $subtotal,
+            'discount' => (float) $discount,
+            'total' => (float) $total,
         ];
     }
 
