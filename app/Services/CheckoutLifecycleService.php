@@ -30,6 +30,11 @@ class CheckoutLifecycleService
         return app(RefundService::class);
     }
 
+    protected function bookingPromotionModel(): \App\Models\BookingPromotion
+    {
+        return app(\App\Models\BookingPromotion::class);
+    }
+
     /**
      * POST /checkout
      * Atomically validates seat locks, creates pending booking, and initiates payment
@@ -183,6 +188,7 @@ class CheckoutLifecycleService
                 $booking->save();
             }
 
+            // mark promotion usage (already attached at booking time) - no-op here
             return $payment;
         });
     }
@@ -253,7 +259,7 @@ class CheckoutLifecycleService
             }
 
             $seatIds = $booking->bookingSeats()->pluck('showtime_seat_id')->all();
-            $seats   = $this->showtimeSeatModel->newQuery()->whereIn('id', $seatIds)->get();
+            $seats   = $this->showtimeSeatModel->newQuery()->whereIn('showtime_seat_id', $seatIds)->get();
 
             $allAvailable = $seats->every(fn($seat) => $seat->status === SeatStatus::AVAILABLE);
 
@@ -324,8 +330,15 @@ class CheckoutLifecycleService
 
     protected function generateQrPayload(Booking $booking): string
     {
-        $raw = $booking->id . ':' . $booking->user_id . ':' . microtime(true);
+        $raw = $booking->booking_id . ':' . $booking->user_id . ':' . microtime(true);
         return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
+    }
+
+    protected function clearPromotionUsage(Booking $booking): void
+    {
+        // Usage counts rely on booking status; just ensure any promotion entries remain but booking status is set appropriately.
+        // Nothing to do here unless business wants deletion; keeping for parity counting via status filter.
+        return;
     }
 
     public function handleRefundSuccess(Payment $payment, Refund $refund, string $gatewayTxnId): void
@@ -347,6 +360,11 @@ class CheckoutLifecycleService
             $booking->qr_payload = null;
             $booking->qr_code = null;
             $booking->save();
+
+            // Remove promotion usage records so usage_limit/per_user_limit can be reapplied
+            if (method_exists($booking, 'bookingPromotions')) {
+                $booking->bookingPromotions()->delete();
+            }
 
             $payment->status = PaymentStatus::REFUNDED;
             $payment->save();

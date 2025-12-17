@@ -9,6 +9,8 @@ use App\Models\Promotion;
 use App\Models\Seat;
 use App\Models\Showtime;
 use App\Models\User;
+use App\Models\BookingPromotion;
+use App\Exceptions\CustomException;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use App\ValueObjects\DiscountResult;
@@ -241,6 +243,10 @@ class PriceCalculationService
      */
     public function calculateDiscounts(float $subtotal, ?string $userId, ?string $promotionCode): DiscountResult
     {
+        if ($promotionCode && !$userId) {
+            throw new CustomException('Guests cannot use promotions', 403);
+        }
+
         $subtotalDec        = $subtotal;
         $totalDiscount      = 0.0;
         $membershipDiscount = 0.0;
@@ -275,10 +281,12 @@ class PriceCalculationService
             }
         }
 
-        // Promotion
-        if ($promotionCode && trim($promotionCode) !== '') {
+        // Promotion (registered users only)
+        if ($promotionCode && trim($promotionCode) !== '' && $userId) {
             $promotion = Promotion::where('code', $promotionCode)->first();
             if ($promotion) {
+                $this->assertPromotionValid($promotion, $userId);
+
                 $promotionDiscount = $this->calculatePromotionDiscount($promotion, $subtotalDec);
                 $totalDiscount    += $promotionDiscount;
 
@@ -288,6 +296,8 @@ class PriceCalculationService
                     'd'    => $promotionDiscount,
                     'code' => $promotionCode,
                 ]);
+            } else {
+                throw new CustomException('Promotion code is invalid or inactive', 404);
             }
         }
 
@@ -334,6 +344,44 @@ class PriceCalculationService
             'FIXED_AMOUNT' => min($value, $amount),
             default       => 0.0,
         };
+    }
+
+    private function assertPromotionValid(Promotion $promotion, string $userId): void
+    {
+        $now = Carbon::now();
+
+        if (!$promotion->is_active) {
+            throw new CustomException('Promotion is inactive', 400);
+        }
+
+        if (($promotion->start_date && $promotion->start_date->isAfter($now)) ||
+            ($promotion->end_date && $promotion->end_date->isBefore($now))) {
+            throw new CustomException('Promotion is not active for this date', 400);
+        }
+
+        if ($promotion->usage_limit !== null) {
+            $usageCount = BookingPromotion::where('promotion_id', $promotion->promotion_id)
+                ->whereHas('booking', function ($q) {
+                    $q->whereNotIn('status', ['CANCELLED', 'REFUNDED']);
+                })
+                ->count();
+            if ($usageCount >= $promotion->usage_limit) {
+                throw new CustomException('Promotion usage limit reached', 400);
+            }
+        }
+
+        if ($promotion->per_user_limit !== null) {
+            $userUsage = BookingPromotion::where('promotion_id', $promotion->promotion_id)
+                ->whereHas('booking', function ($q) use ($userId) {
+                    $q->where('user_id', $userId)
+                        ->whereNotIn('status', ['CANCELLED', 'REFUNDED']);
+                })
+                ->count();
+
+            if ($userUsage >= $promotion->per_user_limit) {
+                throw new CustomException('Promotion usage limit reached for this user', 400);
+            }
+        }
     }
 
     /**
