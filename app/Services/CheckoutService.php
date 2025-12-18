@@ -134,9 +134,11 @@ class CheckoutService
             return $existingUser;
         }
 
+        $fullName = $guestInfo['fullName'] ?? $guestInfo['username'] ?? null;
+
         $user = new User([
             'user_id' => Str::uuid()->toString(),
-            'username' => $guestInfo['fullName'],
+            'username' => $fullName ?? ($guestInfo['email'] ?? 'guest'),
             'email' => $guestInfo['email'],
             'phoneNumber' => $guestInfo['phoneNumber'] ?? null,
             'role' => 'GUEST',
@@ -189,7 +191,6 @@ class CheckoutService
                 'price' => $finalPrice,
             ];
         }
-
         $snackSubtotal = 0;
         $snackItems = [];
 
@@ -259,17 +260,16 @@ class CheckoutService
         $booking = $this->bookingRepository->create($booking->toArray());
 
         foreach ($seatLock->seatLockSeats as $seatLockSeat) {
-            // Find recalculated price for this lock seat
             $ticketItem = collect($pricingData['ticketItems'] ?? [])
                 ->firstWhere('seatLockSeatId', $seatLockSeat->id);
             $seatPrice = $ticketItem['price'] ?? $seatLockSeat->price;
-
             $bookingSeat = new BookingSeat([
                 'booking_id' => $booking->booking_id,
                 'showtime_seat_id' => $seatLockSeat->showtime_seat_id,
                 'seat_lock_seat_id' => $seatLockSeat->id,
                 'ticket_type_id' => $seatLockSeat->ticket_type_id,
-                'price' => $seatPrice,
+                'price' => $seatLockSeat->price,
+                //'price' => $seatPrice,
             ]);
             $bookingSeat->save();
         }
