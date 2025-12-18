@@ -98,6 +98,13 @@ class ExchangeRateService
                 return (float) Cache::get($cacheKey);
             }
 
+            // Use configured fallback rate if available
+            $fallbacks = config('payment.exchange_rate.fallback_rates', []);
+            $key = strtoupper($source) . '_TO_' . strtoupper($target);
+            if (isset($fallbacks[$key])) {
+                return (float) $fallbacks[$key];
+            }
+
             throw new CustomException(
                 'Unable to fetch exchange rates at the moment. Please try again later.',
                 Response::HTTP_SERVICE_UNAVAILABLE,

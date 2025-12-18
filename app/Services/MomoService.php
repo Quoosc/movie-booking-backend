@@ -154,8 +154,8 @@ class MomoService
                 $deeplink = $json['deeplink'] ?? null;
                 $qrCodeUrl = $json['qrCodeUrl'] ?? null;
 
-                $payment->transaction_id = $orderId;
-                $payment->save();
+            $payment->order_id = $orderId;
+            $payment->save();
 
                 Log::info("Momo payment created successfully for booking {$booking->booking_id}");
 
@@ -219,7 +219,7 @@ class MomoService
 
         /** @var Payment|null $payment */
         $payment = $this->paymentModel->newQuery()
-            ->where('transaction_id', $orderId)
+            ->where('order_id', $orderId)
             ->where('method', PaymentMethod::MOMO)
             ->first();
 
@@ -269,7 +269,11 @@ class MomoService
     {
         /** @var Payment|null $payment */
         $payment = $this->paymentModel->newQuery()
-            ->where('transaction_id', $transactionId)
+            ->where(function ($q) use ($transactionId) {
+                $q->where('order_id', $transactionId)
+                  ->orWhere('txn_ref', $transactionId)
+                  ->orWhere('transaction_id', $transactionId);
+            })
             ->where('method', PaymentMethod::MOMO)
             ->first();
 
@@ -291,11 +295,10 @@ class MomoService
                 throw new CustomException('Only successful payments can be refunded', Response::HTTP_BAD_REQUEST);
             }
 
-            $orderId = $payment->transaction_id;
+            $orderId = $payment->order_id ?? $payment->transaction_id;
 
-            // transId should be stored in gateway_transaction_id or similar field
-            // If not available, we need to query Momo API first
-            $transId = $payment->gateway_transaction_id ?? $payment->transaction_id;
+            // transId should be stored in txn_ref or gateway_transaction_id
+            $transId = $payment->txn_ref ?? $payment->gateway_transaction_id ?? $payment->transaction_id;
 
             if (!$orderId || !$transId) {
                 throw new CustomException('No Momo transaction ID found for this payment', Response::HTTP_BAD_REQUEST);

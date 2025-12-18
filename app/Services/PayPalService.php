@@ -13,14 +13,15 @@ use App\DTO\Payments\PaymentResponse;
 use App\Exceptions\CustomException;
 use App\Exceptions\ResourceNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class PayPalService
 {
     public function __construct(
-        protected Payment                 $paymentModel,
-        protected ExchangeRateService     $exchangeRateService,
+        protected Payment $paymentModel,
+        protected ExchangeRateService $exchangeRateService,
     ) {}
 
     protected function checkoutLifecycleService(): CheckoutLifecycleService
@@ -28,21 +29,58 @@ class PayPalService
         return app(CheckoutLifecycleService::class);
     }
 
+    protected function baseUrl(): string
+    {
+        $mode = config('payment.paypal.mode', 'sandbox');
+        return $mode === 'live'
+            ? 'https://api-m.paypal.com'
+            : 'https://api-m.sandbox.paypal.com';
+    }
+
+    protected function clientId(): string
+    {
+        return (string) config('payment.paypal.client_id');
+    }
+
+    protected function clientSecret(): string
+    {
+        return (string) config('payment.paypal.secret');
+    }
+
     protected function returnUrl(): string
     {
-        return config('paypal.return_url');
+        return (string) config('payment.paypal.return_url');
     }
+
     protected function cancelUrl(): string
     {
-        return config('paypal.cancel_url');
+        return (string) config('payment.paypal.cancel_url');
     }
+
+    protected function paypalCurrency(): string
+    {
+        return config('payment.paypal.currency', config('currency.paypal_currency', 'USD'));
+    }
+
     protected function baseCurrency(): string
     {
         return config('currency.base_currency', 'VND');
     }
-    protected function paypalCurrency(): string
+
+    protected function authenticate(): string
     {
-        return config('currency.paypal_currency', 'USD');
+        $response = Http::asForm()
+            ->withBasicAuth($this->clientId(), $this->clientSecret())
+            ->post($this->baseUrl() . '/v1/oauth2/token', [
+                'grant_type' => 'client_credentials',
+            ]);
+
+        if (!$response->ok()) {
+            Log::error('PayPal auth failed', ['status' => $response->status(), 'body' => $response->body()]);
+            throw new CustomException('Failed to authenticate with PayPal', Response::HTTP_BAD_GATEWAY);
+        }
+
+        return $response->json('access_token');
     }
 
     public function createOrder(InitiatePaymentRequest $request): InitiatePaymentResponse
@@ -52,17 +90,11 @@ class PayPalService
             $booking = app(BookingService::class)->getBookingById($request->bookingId);
 
             if ($booking->status !== BookingStatus::PENDING_PAYMENT) {
-                throw new CustomException(
-                    'Booking must be pending payment before PayPal initiation',
-                    Response::HTTP_BAD_REQUEST
-                );
+                throw new CustomException('Booking must be pending payment before PayPal initiation', Response::HTTP_BAD_REQUEST);
             }
 
             if ((float) $request->amount !== (float) $booking->final_price) {
-                throw new CustomException(
-                    'Payment amount does not match booking total',
-                    Response::HTTP_BAD_REQUEST
-                );
+                throw new CustomException('Payment amount does not match booking total', Response::HTTP_BAD_REQUEST);
             }
 
             $conversion = $this->exchangeRateService->convert(
@@ -71,8 +103,7 @@ class PayPalService
                 $this->paypalCurrency()
             );
 
-            $paypalAmount = $conversion->targetAmount;
-
+            // Reuse or create pending payment
             /** @var Payment|null $existing */
             $existing = $this->paymentModel->newQuery()
                 ->where('booking_id', $booking->booking_id)
@@ -81,37 +112,58 @@ class PayPalService
                 ->first();
 
             $payment = $existing ?: new Payment();
-            $payment->amount          = $conversion->sourceAmount;
-            $payment->currency        = $conversion->sourceCurrency;
-            $payment->gateway_amount  = $paypalAmount;
+            $payment->booking_id = $booking->booking_id;
+            $payment->user_id = $booking->user_id;
+            $payment->method = PaymentMethod::PAYPAL;
+            $payment->status = PaymentStatus::PENDING;
+            $payment->amount = $booking->final_price;
+            $payment->currency = $this->baseCurrency();
+            $payment->gateway_amount = $conversion->targetAmount;
             $payment->gateway_currency = $conversion->targetCurrency;
-            $payment->exchange_rate   = $conversion->rate;
-            $payment->status          = PaymentStatus::PENDING;
-            $payment->method          = PaymentMethod::PAYPAL;
-            $payment->booking_id      = $booking->booking_id;
-            $payment->user_id         = $booking->user_id;
-            $payment->created_at      = now();
+            $payment->exchange_rate = $conversion->rate;
+            $payment->created_at = now();
             $payment->save();
 
-            // TODO: Gọi PayPal SDK PHP để tạo Order
-            //      - Set intent CAPTURE
-            //      - Reference id = booking.id
-            //      - amount = paypalAmount (2 decimal), currency = paypalCurrency()
-            //
-            // Giả sử sau khi gọi SDK bạn nhận được:
-            //      $paypalOrderId
-            //      $approvalUrl
-            //
-            // Ở đây mình sẽ fake 2 giá trị đó cho đúng flow, bạn thay bằng dữ liệu từ SDK:
+            $accessToken = $this->authenticate();
 
-            $paypalOrderId = 'PAYPAL_ORDER_' . $payment->id; // TODO: thay = real order id
-            $approvalUrl   = 'https://www.paypal.com/checkoutnow?token=' . $paypalOrderId; // TODO
+            $orderPayload = [
+                'intent' => 'CAPTURE',
+                'purchase_units' => [[
+                    'reference_id' => $booking->booking_id,
+                    'amount' => [
+                        'currency_code' => $conversion->targetCurrency,
+                        'value' => number_format($conversion->targetAmount, 2, '.', ''),
+                    ],
+                ]],
+                'application_context' => [
+                    'return_url' => $this->returnUrl(),
+                    'cancel_url' => $this->cancelUrl(),
+                ],
+            ];
 
-            $payment->transaction_id = $paypalOrderId;
+            $res = Http::withToken($accessToken)
+                ->post($this->baseUrl() . '/v2/checkout/orders', $orderPayload);
+
+            if (!$res->successful()) {
+                Log::error('PayPal create order failed', ['status' => $res->status(), 'body' => $res->body()]);
+                throw new CustomException('Failed to create PayPal order', Response::HTTP_BAD_GATEWAY);
+            }
+
+            $json = $res->json();
+            $paypalOrderId = $json['id'] ?? null;
+            $approvalUrl = collect($json['links'] ?? [])->firstWhere('rel', 'approve')['href'] ?? null;
+
+            if (!$paypalOrderId || !$approvalUrl) {
+                throw new CustomException('Invalid response from PayPal', Response::HTTP_BAD_GATEWAY);
+            }
+
+            $payment->order_id = $paypalOrderId;
+            $payment->payment_url = $approvalUrl;
+            $payment->gateway_response = $json;
             $payment->save();
 
             return new InitiatePaymentResponse(
-                paymentId: $payment->id,
+                paymentId: $payment->payment_id,
                 paypalOrderId: $paypalOrderId,
                 momoOrderId: null,
                 approvalUrl: $approvalUrl,
@@ -124,47 +176,67 @@ class PayPalService
         return DB::transaction(function () use ($orderId) {
             /** @var Payment|null $payment */
             $payment = $this->paymentModel->newQuery()
-                ->where('transaction_id', $orderId)
+                ->where('order_id', $orderId)
                 ->first();
 
             if (!$payment) {
-                throw new ResourceNotFoundException('Payment not found with transactionId ' . $orderId);
+                throw new ResourceNotFoundException('Payment not found with orderId ' . $orderId);
+            }
+
+            if ($payment->status === PaymentStatus::COMPLETED) {
+                $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($payment);
+                return new PaymentResponse(
+                    paymentId: $resp['paymentId'],
+                    bookingId: $resp['bookingId'],
+                    bookingStatus: $resp['bookingStatus'],
+                    paymentStatus: $resp['status'] ?? null,
+                    qrPayload: $resp['qrPayload'] ?? null,
+                );
             }
 
             if ($payment->status !== PaymentStatus::PENDING) {
                 throw new CustomException('Payment has already been processed', Response::HTTP_CONFLICT);
             }
 
-            // TODO: Gọi SDK PayPal để capture order:
-            //  - nếu status COMPLETED => thành công
-            //  - lấy gatewayAmount thực tế, transaction capture id
-            //
-            // Giả sử kết quả:
-            //      $status = 'COMPLETED' | 'FAILED'
-            //      $captureId = '...'
-            //      $capturedAmount = float|null
+            $accessToken = $this->authenticate();
 
-            // === BẮT ĐẦU MOCK để giữ đúng flow ===
-            $status         = 'COMPLETED';             // TODO: lấy từ PayPal SDK
-            $captureId      = 'CAPTURE_' . $orderId;   // TODO
-            $capturedAmount = (float) $payment->gateway_amount;
-            // === KẾT THÚC MOCK ===
+            $res = Http::withToken($accessToken)
+                ->post($this->baseUrl() . "/v2/checkout/orders/{$orderId}/capture");
 
-            if (strtoupper($status) === 'COMPLETED') {
-                if ($capturedAmount !== null) {
-                    $payment->gateway_amount   = $capturedAmount;
-                    $payment->gateway_currency = $this->paypalCurrency();
-                    $payment->save();
-                }
-
-                $updated = $this->checkoutLifecycleService()
-                    ->handleSuccessfulPayment($payment, $capturedAmount, $captureId);
-            } else {
-                $updated = $this->checkoutLifecycleService()
-                    ->handleFailedPayment($payment, 'PayPal capture status: ' . $status);
+            if (!$res->successful()) {
+                Log::error('PayPal capture failed', ['status' => $res->status(), 'body' => $res->body()]);
+                return $this->checkoutLifecycleService()
+                    ->handleFailedPayment($payment, 'PayPal capture failed: ' . $res->body());
             }
 
-            $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($updated);
+            $json = $res->json();
+            $captures = $json['purchase_units'][0]['payments']['captures'][0] ?? null;
+            $captureId = $captures['id'] ?? null;
+            $capturedAmount = $captures['amount']['value'] ?? null;
+            $capturedCurrency = $captures['amount']['currency_code'] ?? null;
+
+            // Validate amount/currency
+            if (
+                $capturedAmount === null ||
+                $capturedCurrency === null ||
+                (float) $capturedAmount != (float) $payment->gateway_amount ||
+                strtoupper($capturedCurrency) !== strtoupper($payment->gateway_currency)
+            ) {
+                return $this->checkoutLifecycleService()
+                    ->handleFailedPayment($payment, 'PayPal amount or currency mismatch');
+            }
+
+            $payment->status = PaymentStatus::COMPLETED;
+            $payment->paid_at = now();
+            $payment->txn_ref = $captureId;
+            $payment->gateway_response = $json;
+            $payment->save();
+
+            $this->checkoutLifecycleService()
+                ->handleSuccessfulPayment($payment, (float) $payment->gateway_amount, $captureId);
+
+            $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($payment);
+
             return new PaymentResponse(
                 paymentId: $resp['paymentId'],
                 bookingId: $resp['bookingId'],
@@ -177,9 +249,33 @@ class PayPalService
 
     public function refundPayment(Payment $payment, float $amount, ?string $reason): string
     {
-        // TODO: Tích hợp PayPal Refund API thật (PayPal PHP SDK).
-        // Tạm thời mock lại cho đúng flow:
-        Log::info("Mock PayPal refund for payment {$payment->id}, amount {$amount}");
-        return 'MOCK_REFUND_' . $payment->id;
+        $accessToken = $this->authenticate();
+        $captureId = $payment->txn_ref ?: $payment->order_id;
+
+        if (!$captureId) {
+            throw new CustomException('Missing PayPal capture id for refund', Response::HTTP_BAD_REQUEST);
+        }
+
+        $payload = [
+            'amount' => [
+                'value' => number_format($amount, 2, '.', ''),
+                'currency_code' => $payment->gateway_currency ?: $this->paypalCurrency(),
+            ],
+        ];
+
+        if ($reason) {
+            $payload['note_to_payer'] = $reason;
+        }
+
+        $res = Http::withToken($accessToken)
+            ->post($this->baseUrl() . "/v2/payments/captures/{$captureId}/refund", $payload);
+
+        if (!$res->successful()) {
+            Log::error('PayPal refund failed', ['status' => $res->status(), 'body' => $res->body()]);
+            throw new CustomException('PayPal refund failed', Response::HTTP_BAD_GATEWAY);
+        }
+
+        $json = $res->json();
+        return $json['id'] ?? $captureId;
     }
 }
