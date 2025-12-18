@@ -199,8 +199,6 @@ class PayPalService
 
             $booking = $payment->booking;
             if (!$booking) {
-                // Clean up orphan payment to prevent repeated capture attempts on invalid data
-                $payment->delete();
                 throw new ResourceNotFoundException('Payment has no booking');
             }
 
@@ -253,13 +251,28 @@ class PayPalService
             $capturedAmount = $captures['amount']['value'] ?? null;
             $capturedCurrency = $captures['amount']['currency_code'] ?? null;
 
+            Log::info('[paypal] capture response', [
+                'orderId' => $cleanOrderId,
+                'paymentId' => $payment->payment_id,
+                'captureId' => $captureId,
+                'capturedAmount' => $capturedAmount,
+                'capturedCurrency' => $capturedCurrency,
+                'expectedAmount' => $payment->gateway_amount,
+                'expectedCurrency' => $payment->gateway_currency,
+            ]);
+
             // Validate amount/currency
-            if (
-                $capturedAmount === null ||
-                $capturedCurrency === null ||
-                (float) $capturedAmount != (float) $payment->gateway_amount ||
-                strtoupper($capturedCurrency) !== strtoupper($payment->gateway_currency)
-            ) {
+            $expectedAmount = $payment->gateway_amount;
+            $expectedCurrency = strtoupper((string) $payment->gateway_currency);
+            $amountMismatch = false;
+            if ($capturedAmount === null || $capturedCurrency === null) {
+                $amountMismatch = true;
+            } else {
+                $amountMismatch = abs((float) $capturedAmount - (float) $expectedAmount) > 0.01
+                    || strtoupper($capturedCurrency) !== $expectedCurrency;
+            }
+
+            if ($amountMismatch) {
                 $updated = $this->checkoutLifecycleService()
                     ->handleFailedPayment($payment, 'PayPal amount or currency mismatch');
                 $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($updated);

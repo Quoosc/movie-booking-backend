@@ -38,6 +38,11 @@ class BookingSeat extends Model
         });
     }
 
+    public function showtimeSeat()
+    {
+        return $this->belongsTo(ShowtimeSeat::class, 'showtime_seat_id', 'showtime_seat_id');
+    }
+
     public function ticketType()
     {
         return $this->belongsTo(TicketType::class, 'ticket_type_id', 'id');

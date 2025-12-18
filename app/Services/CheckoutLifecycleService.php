@@ -215,6 +215,10 @@ class CheckoutLifecycleService
                 $booking->qr_code = null;
                 $booking->save();
 
+                Log::info('[booking.paymentFailed] releasing seats without deleting booking_seats', [
+                    'bookingId' => $booking->booking_id,
+                    'reason' => $sanitizedReason,
+                ]);
                 $this->releaseSeats($booking);
             }
 
@@ -235,6 +239,9 @@ class CheckoutLifecycleService
             $booking->qr_code = null;
             $booking->save();
 
+            Log::info('[booking.paymentTimeout] releasing seats without deleting booking_seats', [
+                'bookingId' => $booking->booking_id,
+            ]);
             $this->releaseSeats($booking);
         });
     }
@@ -322,9 +329,18 @@ class CheckoutLifecycleService
         $seatIds = $booking->bookingSeats()->pluck('showtime_seat_id')->all();
 
         if (empty($seatIds)) {
+            Log::warning('[booking.releaseSeats] No booking_seats found for booking', [
+                'bookingId' => $booking->booking_id,
+                'bookingStatus' => $booking->status->value,
+            ]);
             return;
         }
 
+        Log::info('[booking.releaseSeats] Releasing seats', [
+            'bookingId' => $booking->booking_id,
+            'seatCount' => count($seatIds),
+            'bookingStatus' => $booking->status->value,
+        ]);
         $this->showtimeSeatModel->newQuery()
             ->whereIn('showtime_seat_id', $seatIds)
             ->update(['seat_status' => SeatStatus::AVAILABLE->value]);

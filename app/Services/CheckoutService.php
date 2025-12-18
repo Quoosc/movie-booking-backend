@@ -8,6 +8,7 @@ use App\Exceptions\{ResourceNotFoundException, LockExpiredException, CustomExcep
 use App\Models\{SeatLock, Booking, User, BookingSeat, BookingSnack, BookingPromotion};
 use App\Repositories\{SeatLockRepository, BookingRepository, ShowtimeSeatRepository};
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 use App\Services\TicketTypeService;
@@ -73,7 +74,13 @@ class CheckoutService
                 $sessionContext->isAuthenticated() ? $user->user_id : null
             );
 
+            // Ensure seats are loaded for persistence and logging
+            $seatLock->loadMissing('seatLockSeats');
             $booking = $this->createBooking($user, $seatLock, $pricingData, $snackCombos);
+            Log::info('[booking.confirm] persisted booking seats', [
+                'bookingId' => $booking->booking_id,
+                'seatCount' => $booking->bookingSeats()->count(),
+            ]);
 
             $seatIds = $seatLock->seatLockSeats->pluck('showtime_seat_id')->toArray();
             $this->showtimeSeatRepository->updateStatusBatch($seatIds, SeatStatus::BOOKED->value);
@@ -268,8 +275,8 @@ class CheckoutService
                 'showtime_seat_id' => $seatLockSeat->showtime_seat_id,
                 'seat_lock_seat_id' => $seatLockSeat->id,
                 'ticket_type_id' => $seatLockSeat->ticket_type_id,
-                'price' => $seatLockSeat->price,
-                //'price' => $seatPrice,
+                //'price' => $seatLockSeat->price,
+                'price' => $seatPrice,
             ]);
             $bookingSeat->save();
         }
@@ -334,6 +341,14 @@ class CheckoutService
      */
     private function mapBookingToResponse(Booking $booking): array
     {
+        $booking->loadMissing([
+            'bookingSeats.showtimeSeat.seat',
+            'bookingSeats.ticketType',
+            'bookingSnacks.snack',
+            'showtime.movie',
+            'showtime.room.cinema',
+        ]);
+
         $showtime = $booking->showtime;
         $movie = $showtime?->movie;
         $room = $showtime?->room;
@@ -350,6 +365,17 @@ class CheckoutService
             ];
         })->toArray();
 
+        $snacks = $booking->bookingSnacks->map(function ($bs) {
+            $snack = $bs->snack;
+            return [
+                'snackId' => $snack?->snack_id,
+                'name' => $snack?->name,
+                'quantity' => $bs->quantity,
+                'unitPrice' => $snack?->price,
+                'totalPrice' => $snack ? $snack->price * $bs->quantity : null,
+            ];
+        })->toArray();
+
         return [
             'bookingId' => $booking->booking_id,
             'showtimeId' => $booking->showtime_id,
@@ -358,6 +384,7 @@ class CheckoutService
             'cinemaName' => $cinema?->name,
             'roomName' => $room?->room_number,
             'seats' => $seats,
+            'snacks' => $snacks,
             'totalPrice' => (float) $booking->total_price,
             'discountReason' => $booking->discount_reason,
             'discountValue' => (float) $booking->discount_value,
