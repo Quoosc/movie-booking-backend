@@ -441,12 +441,21 @@ class BookingService
     /**
      * Map Booking to Response
      */
-    private function mapBookingToResponse(Booking $booking): array
+    public function mapBookingToResponse(Booking $booking): array
     {
+        $booking->loadMissing([
+            'bookingSeats.showtimeSeat.seat',
+            'bookingSeats.ticketType',
+            'bookingSnacks.snack',
+            'showtime.movie',
+            'showtime.room.cinema',
+        ]);
+
         $showtime = $booking->showtime;
         $movie = $showtime?->movie;
         $room = $showtime?->room;
         $cinema = $room?->cinema;
+        $posterUrl = $movie?->poster_url ?? $movie?->posterUrl ?? $movie?->poster ?? null;
 
         $seats = $booking->bookingSeats->map(function ($bs) {
             $seat = $bs->showtimeSeat?->seat;
@@ -454,7 +463,21 @@ class BookingService
                 'rowLabel' => $seat?->row_label,
                 'seatNumber' => $seat?->seat_number,
                 'seatType' => $seat?->seat_type,
+                'ticketTypeLabel' => $bs->ticketType?->label ?? null,
                 'price' => (float) $bs->price,
+            ];
+        })->toArray();
+
+        $snacks = $booking->bookingSnacks->map(function ($bs) {
+            $snack = $bs->snack;
+            $unitPrice = $snack ? (float) $snack->price : null;
+            return [
+                'snackId' => $snack?->snack_id,
+                'name' => $snack?->name,
+                'quantity' => $bs->quantity,
+                'unitPrice' => $unitPrice,
+                'totalPrice' => $unitPrice !== null ? $unitPrice * $bs->quantity : null,
+                'imageUrl' => $snack->image_url ?? $snack->imageUrl ?? null,
             ];
         })->toArray();
 
@@ -462,10 +485,12 @@ class BookingService
             'bookingId' => $booking->booking_id,
             'showtimeId' => $booking->showtime_id,
             'movieTitle' => $movie?->title,
+            'posterUrl' => $posterUrl,
             'showtimeStartTime' => $showtime?->start_time?->toIso8601String(),
             'cinemaName' => $cinema?->name,
             'roomName' => $room?->room_number,
             'seats' => $seats,
+            'snacks' => $snacks,
             'totalPrice' => (float) $booking->total_price,
             'discountReason' => $booking->discount_reason,
             'discountValue' => (float) $booking->discount_value,

@@ -25,7 +25,8 @@ class CheckoutService
         protected TicketTypeService $ticketTypeService,
         protected PayPalService $paypalService,
         protected MomoService $momoService,
-        protected RedisLockService $redisLockService
+        protected RedisLockService $redisLockService,
+        protected BookingService $bookingService
     ) {
         $this->paymentTimeoutMinutes = config('booking.payment.timeout.minutes', 15);
     }
@@ -341,59 +342,6 @@ class CheckoutService
      */
     private function mapBookingToResponse(Booking $booking): array
     {
-        $booking->loadMissing([
-            'bookingSeats.showtimeSeat.seat',
-            'bookingSeats.ticketType',
-            'bookingSnacks.snack',
-            'showtime.movie',
-            'showtime.room.cinema',
-        ]);
-
-        $showtime = $booking->showtime;
-        $movie = $showtime?->movie;
-        $room = $showtime?->room;
-        $cinema = $room?->cinema;
-
-        $seats = $booking->bookingSeats->map(function ($bs) {
-            $seat = $bs->showtimeSeat?->seat;
-            return [
-                'rowLabel' => $seat?->row_label,
-                'seatNumber' => $seat?->seat_number,
-                'seatType' => $seat?->seat_type,
-                'ticketTypeLabel' => $bs->ticketType?->label ?? null,
-                'price' => (float) $bs->price,
-            ];
-        })->toArray();
-
-        $snacks = $booking->bookingSnacks->map(function ($bs) {
-            $snack = $bs->snack;
-            return [
-                'snackId' => $snack?->snack_id,
-                'name' => $snack?->name,
-                'quantity' => $bs->quantity,
-                'unitPrice' => $snack?->price,
-                'totalPrice' => $snack ? $snack->price * $bs->quantity : null,
-            ];
-        })->toArray();
-
-        return [
-            'bookingId' => $booking->booking_id,
-            'showtimeId' => $booking->showtime_id,
-            'movieTitle' => $movie?->title,
-            'showtimeStartTime' => $showtime?->start_time?->toIso8601String(),
-            'cinemaName' => $cinema?->name,
-            'roomName' => $room?->room_number,
-            'seats' => $seats,
-            'snacks' => $snacks,
-            'totalPrice' => (float) $booking->total_price,
-            'discountReason' => $booking->discount_reason,
-            'discountValue' => (float) $booking->discount_value,
-            'finalPrice' => (float) $booking->final_price,
-            'status' => $booking->status->value,
-            'bookedAt' => $booking->booked_at?->toIso8601String(),
-            'qrCode' => $booking->qr_code,
-            'qrPayload' => $booking->qr_payload,
-            'paymentExpiresAt' => $booking->payment_expires_at?->toIso8601String(),
-        ];
+        return $this->bookingService->mapBookingToResponse($booking);
     }
 }
