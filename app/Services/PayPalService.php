@@ -141,6 +141,11 @@ class PayPalService
                 ],
             ];
 
+            \Log::info('[paypal] createOrder payload', [
+                'bookingId' => $booking->booking_id,
+                'orderPayload' => $orderPayload,
+            ]);
+
             $res = Http::withToken($accessToken)
                 ->post($this->baseUrl() . '/v2/checkout/orders', $orderPayload);
 
@@ -176,13 +181,20 @@ class PayPalService
     public function captureOrder(string $orderId): PaymentResponse
     {
         return DB::transaction(function () use ($orderId) {
+            $cleanOrderId = trim($orderId);
+            if (str_contains($cleanOrderId, 'token=')) {
+                // In case FE accidentally passes full query, extract token param
+                parse_str(parse_url($cleanOrderId, PHP_URL_QUERY) ?? $cleanOrderId, $parsed);
+                $cleanOrderId = $parsed['token'] ?? $cleanOrderId;
+            }
+
             /** @var Payment|null $payment */
             $payment = $this->paymentModel->newQuery()
-                ->where('order_id', $orderId)
+                ->where('order_id', $cleanOrderId)
                 ->first();
 
             if (!$payment) {
-                throw new ResourceNotFoundException('Payment not found with orderId ' . $orderId);
+                throw new ResourceNotFoundException('Payment not found with orderId ' . $cleanOrderId);
             }
 
             $booking = $payment->booking;
@@ -210,8 +222,16 @@ class PayPalService
 
             $accessToken = $this->authenticate();
 
+            $captureUrl = $this->baseUrl() . "/v2/checkout/orders/{$cleanOrderId}/capture";
+            \Log::info('[paypal] capture start', [
+                'orderId' => $cleanOrderId,
+                'paymentId' => $payment->payment_id,
+                'bookingId' => $booking->booking_id,
+                'captureUrl' => $captureUrl,
+            ]);
+
             $res = Http::withToken($accessToken)
-                ->post($this->baseUrl() . "/v2/checkout/orders/{$orderId}/capture");
+                ->post($captureUrl);
 
             if (!$res->successful()) {
                 Log::error('PayPal capture failed', ['status' => $res->status(), 'body' => $res->body()]);

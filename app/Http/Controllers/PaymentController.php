@@ -23,6 +23,8 @@ class PaymentController extends Controller
      */
     public function initiatePayment(Request $request): JsonResponse
     {
+        \Log::info('[payments/order] request', $request->all());
+
         $data = $request->validate([
             'bookingId' => 'required|uuid|exists:bookings,booking_id',
             'paymentMethod' => 'required|in:MOMO,PAYPAL',
@@ -54,6 +56,8 @@ class PaymentController extends Controller
      */
     public function capturePayment(Request $request): JsonResponse
     {
+        \Log::info('[payments/order/capture] request', $request->all());
+
         $data = $request->validate([
             'transactionId' => 'required|string',
             'paymentMethod' => 'required|in:MOMO,PAYPAL',

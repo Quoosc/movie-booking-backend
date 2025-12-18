@@ -41,6 +41,8 @@ class Payment extends Model
         'gateway_amount' => 'decimal:2',
         'exchange_rate'  => 'decimal:4',
         'gateway_response' => 'array',
+        'created_at'     => 'datetime',
+        'completed_at'   => 'datetime',
         'paid_at'        => 'datetime',
         'status'         => PaymentStatus::class,
         'method'         => PaymentMethod::class,

@@ -340,16 +340,16 @@ class CinemaController extends Controller
         try {
             $cinemaId = $request->query('cinemaId');
 
-            if (!$cinemaId) {
-                return $this->respond(null, 'cinemaId query parameter is required', 400);
+            if ($cinemaId) {
+                // Validate UUID format when provided
+                if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $cinemaId)) {
+                    return $this->respond(null, 'Invalid cinemaId format', 400);
+                }
+                $snacks = $this->cinemaService->getSnacksByCinema($cinemaId);
+            } else {
+                // Backward-compatible: no cinemaId returns all public snacks
+                $snacks = $this->cinemaService->getAllSnacks();
             }
-
-            // Validate UUID format
-            if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $cinemaId)) {
-                return $this->respond(null, 'Invalid cinemaId format', 400);
-            }
-
-            $snacks = $this->cinemaService->getSnacksByCinema($cinemaId);
 
             return $this->respond(SnackResource::collection($snacks));
         } catch (\Exception $e) {

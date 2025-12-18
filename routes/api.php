@@ -18,8 +18,6 @@ use App\Http\Controllers\ShowtimeTicketTypeController;
 use App\Http\Controllers\PriceBaseController;
 use App\Http\Controllers\PriceModifierController;
 use App\Http\Controllers\PromotionController;
-use App\Http\Controllers\Payments\PayPalController;
-use App\Http\Controllers\Payments\MomoController;
 use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\SeatLockController;
 use App\Http\Controllers\PaymentController;
@@ -176,20 +174,18 @@ Route::post('/checkout', [CheckoutController::class, 'confirmAndInitiate']);
 
 // ====== PAYMENTS ======
 Route::prefix('payments')->group(function () {
-    // Momo IPN callbacks (PUBLIC - no auth, signature verified in service)
+    // PUBLIC: init + capture + IPN (guest/auth)
+    Route::post('/order', [PaymentController::class, 'initiatePayment']);
+    Route::post('/order/capture', [PaymentController::class, 'capturePayment']);
     Route::get('/momo/ipn', [PaymentController::class, 'handleMomoIpnGet']);
     Route::post('/momo/ipn', [PaymentController::class, 'handleMomoIpnPost']);
 
-    // Payment initiation (auth required)
+    // AUTH ONLY
     Route::middleware('auth.jwt')->group(function () {
-        Route::post('/order', [PaymentController::class, 'initiatePayment']);
         Route::get('/search', [PaymentController::class, 'searchPayments']);
     });
 
-    // Capture remains public (gateway callback)
-    Route::post('/order/capture', [PaymentController::class, 'capturePayment']);
-    // Refund/admin routes remain below...
-    // Refund (ADMIN only)
+    // ADMIN ONLY
     Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
         Route::post('/{paymentId}/refund', [RefundController::class, 'refund']);
     });
@@ -244,19 +240,7 @@ Route::middleware('auth.jwt')->group(function () {
 
 
     // ========== GATEWAY-SPECIFIC PAYMENT ROUTES (Optional, for advanced use) ==========
-    Route::prefix('payments')->group(function () {
-        // PAYPAL specific routes
-        Route::prefix('paypal')->group(function () {
-            Route::post('create-order',  [PayPalController::class, 'createOrder']);
-            Route::post('capture-order', [PayPalController::class, 'captureOrder']);
-        });
-
-        // MOMO specific routes  
-        Route::prefix('momo')->group(function () {
-            Route::post('create-order', [MomoController::class, 'createOrder']);
-            Route::get('verify',        [MomoController::class, 'verifyPayment']);
-        });
-    });
+    // Note: gateway-specific routes removed to avoid overlapping with unified /payments/order flow
 
     // ===== ADMIN SEATS =====
     Route::prefix('seats')->group(function () {
