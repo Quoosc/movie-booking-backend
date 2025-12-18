@@ -22,9 +22,11 @@ class BookingRepository
     public function findByUserId(string $userId, int $page = 1, int $perPage = 10): LengthAwarePaginator
     {
         return Booking::with([
-            'bookingSeats',
+            'bookingSeats.showtimeSeat.seat',
+            'bookingSeats.ticketType',
+            'bookingSnacks.snack',
             'showtime.movie',
-            'showtime.cinema'
+            'showtime.room.cinema'
         ])
             ->where('user_id', $userId)
             ->orderBy('booked_at', 'desc')
