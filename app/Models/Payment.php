@@ -48,18 +48,21 @@ class Payment extends Model
 
     // ====== relationships ======
 
+    // Payment.php
+
     public function booking()
     {
-        return $this->belongsTo(Booking::class);
-    }
-
-    public function user()
-    {
-        return $this->belongsTo(User::class, 'user_id', 'user_id');
+        return $this->belongsTo(Booking::class, 'booking_id', 'booking_id');
     }
 
     public function refunds()
     {
-        return $this->hasMany(Refund::class);
+        return $this->hasMany(Refund::class, 'payment_id', 'payment_id');
+    }
+
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id', 'user_id');
     }
 }

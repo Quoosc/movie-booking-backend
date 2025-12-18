@@ -158,6 +158,8 @@ class PayPalService
             }
 
             $payment->order_id = $paypalOrderId;
+            $payment->txn_ref = $paypalOrderId;
+            $payment->transaction_id = $paypalOrderId;
             $payment->payment_url = $approvalUrl;
             $payment->gateway_response = $json;
             $payment->save();
@@ -183,7 +185,15 @@ class PayPalService
                 throw new ResourceNotFoundException('Payment not found with orderId ' . $orderId);
             }
 
-            if ($payment->status === PaymentStatus::COMPLETED) {
+            $booking = $payment->booking;
+            if (!$booking) {
+                // Clean up orphan payment to prevent repeated capture attempts on invalid data
+                $payment->delete();
+                throw new ResourceNotFoundException('Payment has no booking');
+            }
+
+            // If already processed, return current state (idempotent)
+            if ($payment->status !== PaymentStatus::PENDING) {
                 $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($payment);
                 return new PaymentResponse(
                     paymentId: $resp['paymentId'],
@@ -194,8 +204,8 @@ class PayPalService
                 );
             }
 
-            if ($payment->status !== PaymentStatus::PENDING) {
-                throw new CustomException('Payment has already been processed', Response::HTTP_CONFLICT);
+            if ($booking->status !== BookingStatus::PENDING_PAYMENT) {
+                throw new CustomException('Booking is not pending payment', Response::HTTP_CONFLICT);
             }
 
             $accessToken = $this->authenticate();

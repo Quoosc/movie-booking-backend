@@ -180,16 +180,15 @@ Route::prefix('payments')->group(function () {
     Route::get('/momo/ipn', [PaymentController::class, 'handleMomoIpnGet']);
     Route::post('/momo/ipn', [PaymentController::class, 'handleMomoIpnPost']);
 
-    // Payment initiation (allow guest session or auth)
-    Route::post('/order', [PaymentController::class, 'initiatePayment']);
+    // Payment initiation (auth required)
+    Route::middleware('auth.jwt')->group(function () {
+        Route::post('/order', [PaymentController::class, 'initiatePayment']);
+        Route::get('/search', [PaymentController::class, 'searchPayments']);
+    });
 
     // Capture remains public (gateway callback)
     Route::post('/order/capture', [PaymentController::class, 'capturePayment']);
-
-    // Search payments (JWT required)
-    Route::middleware('auth.jwt')->group(function () {
-        Route::get('/search', [PaymentController::class, 'searchPayments']);
-    });
+    // Refund/admin routes remain below...
     // Refund (ADMIN only)
     Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
         Route::post('/{paymentId}/refund', [RefundController::class, 'refund']);

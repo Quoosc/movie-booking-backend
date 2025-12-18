@@ -48,15 +48,18 @@ class Booking extends Model
 
     // ====== relationships ======
 
+    // Booking.php
+
     public function user()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'user_id', 'user_id');
     }
 
     public function showtime()
     {
-        return $this->belongsTo(Showtime::class);
+        return $this->belongsTo(Showtime::class, 'showtime_id', 'showtime_id');
     }
+
 
     public function bookingSeats()
     {

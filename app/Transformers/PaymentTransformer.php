@@ -11,8 +11,8 @@ class PaymentTransformer
         $booking = $payment->booking;
 
         return [
-            'paymentId'       => (string) $payment->id,
-            'bookingId'       => $booking?->id ? (string) $booking->id : null,
+            'paymentId'       => (string) $payment->payment_id,
+            'bookingId'       => $booking?->booking_id ? (string) $booking->booking_id : null,
             'bookingStatus'   => $booking?->status?->value ?? $booking?->status,
             'qrPayload'       => $booking?->qr_payload,
 
