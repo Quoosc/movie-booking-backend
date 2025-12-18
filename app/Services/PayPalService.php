@@ -205,8 +205,16 @@ class PayPalService
 
             if (!$res->successful()) {
                 Log::error('PayPal capture failed', ['status' => $res->status(), 'body' => $res->body()]);
-                return $this->checkoutLifecycleService()
+                $updated = $this->checkoutLifecycleService()
                     ->handleFailedPayment($payment, 'PayPal capture failed: ' . $res->body());
+                $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($updated);
+                return new PaymentResponse(
+                    paymentId: $resp['paymentId'],
+                    bookingId: $resp['bookingId'],
+                    bookingStatus: $resp['bookingStatus'],
+                    paymentStatus: $resp['status'] ?? null,
+                    qrPayload: $resp['qrPayload'] ?? null,
+                );
             }
 
             $json = $res->json();
@@ -222,8 +230,16 @@ class PayPalService
                 (float) $capturedAmount != (float) $payment->gateway_amount ||
                 strtoupper($capturedCurrency) !== strtoupper($payment->gateway_currency)
             ) {
-                return $this->checkoutLifecycleService()
+                $updated = $this->checkoutLifecycleService()
                     ->handleFailedPayment($payment, 'PayPal amount or currency mismatch');
+                $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($updated);
+                return new PaymentResponse(
+                    paymentId: $resp['paymentId'],
+                    bookingId: $resp['bookingId'],
+                    bookingStatus: $resp['bookingStatus'],
+                    paymentStatus: $resp['status'] ?? null,
+                    qrPayload: $resp['qrPayload'] ?? null,
+                );
             }
 
             $payment->status = PaymentStatus::COMPLETED;
