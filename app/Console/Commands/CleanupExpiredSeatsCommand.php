@@ -66,8 +66,16 @@ class CleanupExpiredSeatsCommand extends Command
                 }
 
                 // Expire pending bookings past payment_expires_at
+                $timeoutMinutes = config('booking.payment.timeout.minutes', 15);
                 $expiredBookings = Booking::where('status', BookingStatus::PENDING_PAYMENT)
-                    ->where('payment_expires_at', '<=', $now)
+                    ->where(function ($q) use ($now, $timeoutMinutes) {
+                        $q->where('payment_expires_at', '<=', $now)
+                          ->orWhere(function ($q2) use ($now, $timeoutMinutes) {
+                              // Fallback: if payment_expires_at is null, use booked_at + timeout
+                              $q2->whereNull('payment_expires_at')
+                                 ->where('booked_at', '<=', $now->copy()->subMinutes($timeoutMinutes));
+                          });
+                    })
                     ->with('bookingSeats')
                     ->get();
 
@@ -82,6 +90,10 @@ class CleanupExpiredSeatsCommand extends Command
                     $booking->status = BookingStatus::EXPIRED;
                     $booking->qr_payload = null;
                     $booking->qr_code = null;
+                    // set payment_expires_at if missing to make next passes idempotent
+                    if (!$booking->payment_expires_at) {
+                        $booking->payment_expires_at = $booking->booked_at?->copy()->addMinutes($timeoutMinutes) ?? $now;
+                    }
                     $booking->save();
                 }
             });

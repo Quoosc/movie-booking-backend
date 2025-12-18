@@ -12,6 +12,7 @@ use App\Enums\SeatStatus;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class CheckoutLifecycleService
 {
@@ -197,6 +198,7 @@ class CheckoutLifecycleService
     {
         return DB::transaction(function () use ($payment, $reason) {
             $booking = $payment->booking;
+            $sanitizedReason = Str::limit($reason, 250);
 
             if ($payment->status === PaymentStatus::COMPLETED) {
                 Log::warning("Attempted to mark payment {$payment->id} as failed after success");
@@ -204,10 +206,10 @@ class CheckoutLifecycleService
             }
 
             $payment->status = PaymentStatus::FAILED;
-            $payment->error_message = $reason;
+            $payment->error_message = $sanitizedReason;
             $payment->save();
 
-            if ($booking->status === BookingStatus::PENDING_PAYMENT) {
+            if ($booking && $booking->status === BookingStatus::PENDING_PAYMENT) {
                 $booking->status = BookingStatus::CANCELLED;
                 $booking->qr_payload = null;
                 $booking->qr_code = null;
@@ -325,7 +327,7 @@ class CheckoutLifecycleService
 
         $this->showtimeSeatModel->newQuery()
             ->whereIn('showtime_seat_id', $seatIds)
-            ->update(['status' => SeatStatus::AVAILABLE]);
+            ->update(['seat_status' => SeatStatus::AVAILABLE->value]);
     }
 
     protected function generateQrPayload(Booking $booking): string
