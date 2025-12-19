@@ -22,6 +22,7 @@ class OAuthController extends Controller
     {
         return Socialite::driver('google')
             ->scopes(['openid', 'email', 'profile'])
+            ->with(['prompt' => 'select_account'])
             ->redirect();
     }
 
@@ -85,7 +86,7 @@ class OAuthController extends Controller
             'refresh_token',
             $refreshModel->token,
             60 * 24 * 7, // 7 days
-            '/auth',
+            '/api/auth',
             null,
             false,
             true,
