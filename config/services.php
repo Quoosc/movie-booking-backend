@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', rtrim(env('APP_URL', 'http://localhost:8000'), '/') . '/login/oauth2/code/google'),
+        'frontend_redirect' => env('FRONTEND_REDIRECT_URL', 'http://localhost:5173/oauth2/success'),
+    ],
+
 ];

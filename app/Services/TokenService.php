@@ -36,6 +36,27 @@ class TokenService
             'exp' => $exp,
             'sub' => $user->user_id,
             'role' => $user->role,
+            'roles' => [$this->formatRole($user->role)],
+            'email' => $user->email,
+        ];
+
+        return JWT::encode($payload, $this->secret, 'HS256');
+    }
+
+    /** Tạo access token với TTL & roles tùy chỉnh (OAuth flow) */
+    public function generateAccessTokenWithClaims(User $user, int $ttlMinutes, array $roles): string
+    {
+        $now = time();
+        $exp = $now + $ttlMinutes * 60;
+
+        $payload = [
+            'iss' => $this->issuer,
+            'iat' => $now,
+            'nbf' => $now,
+            'exp' => $exp,
+            'sub' => $user->user_id,
+            'role' => $user->role,
+            'roles' => $roles,
             'email' => $user->email,
         ];
 
@@ -120,5 +141,11 @@ class TokenService
         }
 
         return User::find($userId);
+    }
+
+    protected function formatRole(?string $role): string
+    {
+        $roleValue = $role ?: 'USER';
+        return 'ROLE_' . strtoupper($roleValue);
     }
 }

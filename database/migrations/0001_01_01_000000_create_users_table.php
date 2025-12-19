@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('username');
             $table->string('email')->unique();
             $table->string('phoneNumber')->nullable();   // theo đúng schema v2.4
-            $table->string('password');
+            $table->string('password')->nullable();
             $table->string('provider')->nullable();      // local, google, facebook...
 
             // ===== Quyền & avatar =====
