@@ -19,6 +19,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\CheckRole::class,
         ]);
 
+        // Use custom cookie encryption exclusions (access_token/refresh_token)
+        $middleware->web(replace: [
+            \Illuminate\Cookie\Middleware\EncryptCookies::class => \App\Http\Middleware\EncryptCookies::class,
+        ]);
+
         // Enable CORS globally
         $middleware->use([
             \Illuminate\Http\Middleware\HandleCors::class,
