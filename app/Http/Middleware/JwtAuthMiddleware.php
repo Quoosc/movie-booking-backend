@@ -18,19 +18,19 @@ class JwtAuthMiddleware
 
     public function handle(Request $request, Closure $next)
     {
-        $authHeader = $request->header('Authorization');
+        $user = null;
+        $token = $request->bearerToken();
 
-        if (!$authHeader || !str_starts_with($authHeader, 'Bearer ')) {
-            return response()->json([
-                'code'    => 401,
-                'message' => 'Missing or invalid Authorization header',
-                'data'    => null,
-            ], 401);
+        if ($token) {
+            $user = $this->tokenService->getUserFromAccessToken($token);
         }
 
-        $token = substr($authHeader, 7);
-
-        $user = $this->tokenService->getUserFromAccessToken($token);
+        if (!$user) {
+            $cookieToken = $request->cookie('access_token');
+            if ($cookieToken) {
+                $user = $this->tokenService->getUserFromAccessToken($cookieToken);
+            }
+        }
 
         if (!$user) {
             return response()->json([
