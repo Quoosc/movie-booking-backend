@@ -143,16 +143,30 @@ public function refresh(Request $request)
 
     // ========== LOGOUT ==========
 
-    public function logout(Request $request)
+public function logout(Request $request)
 {
-    $token = $request->cookie('refreshToken') 
+    $token = $request->cookie('refresh_token')
         ?? $request->input('refreshToken'); // cho phép body nếu muốn
 
     if ($token) {
         $this->tokenService->revokeRefreshToken($token);
     }
 
-    return $this->respond(null, 'OK', 200);
+    $forgetAccess = cookie('access_token', '', -1, '/');
+    $forgetRefreshApi = cookie('refresh_token', '', -1, '/api/auth');
+    $forgetRefreshAuth = cookie('refresh_token', '', -1, '/auth');
+    $forgetRefreshRoot = cookie('refresh_token', '', -1, '/');
+
+    if ($request->hasSession()) {
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+    }
+
+    return $this->respond(null, 'OK', 200)
+        ->withCookie($forgetAccess)
+        ->withCookie($forgetRefreshApi)
+        ->withCookie($forgetRefreshAuth)
+        ->withCookie($forgetRefreshRoot);
 }
 
      // ========== LOGOUT ALL (mọi session của 1 email) ==========
@@ -176,11 +190,17 @@ public function refresh(Request $request)
         // Revoke toàn bộ refresh token của user đó
         $this->tokenService->revokeAllTokensForUser($user);
 
-        // Xoá cookie refresh_token hiện tại (nếu có)
-        $forgetCookie = cookie()->forget('refresh_token');
+        $forgetAccess = cookie('access_token', '', -1, '/');
+        $forgetRefreshApi = cookie('refresh_token', '', -1, '/api/auth');
+        $forgetRefreshAuth = cookie('refresh_token', '', -1, '/auth');
+        $forgetRefreshRoot = cookie('refresh_token', '', -1, '/');
 
         // Trả đúng format spec: data là 1 object rỗng {}
-        return $this->respond((object) [], 'OK', 200)->withCookie($forgetCookie);
+        return $this->respond((object) [], 'OK', 200)
+            ->withCookie($forgetAccess)
+            ->withCookie($forgetRefreshApi)
+            ->withCookie($forgetRefreshAuth)
+            ->withCookie($forgetRefreshRoot);
     }
 
 
