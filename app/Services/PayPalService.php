@@ -361,6 +361,13 @@ class PayPalService
             ],
         ];
 
+        Log::info('[paypal] refund request', [
+            'paymentId' => $payment->payment_id,
+            'captureId' => $captureId,
+            'amount' => $payload['amount']['value'],
+            'currency' => $payload['amount']['currency_code'],
+        ]);
+
         if ($reason) {
             $payload['note_to_payer'] = $reason;
         }

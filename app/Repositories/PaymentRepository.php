@@ -62,4 +62,35 @@ class PaymentRepository
 
         return $query->with(['booking'])->orderBy('created_at', 'desc')->get();
     }
+
+    public function searchPayments(array $filters = []): Collection
+    {
+        $query = Payment::query();
+
+        if (isset($filters['userId'])) {
+            $query->where('user_id', $filters['userId']);
+        }
+
+        if (isset($filters['bookingId'])) {
+            $query->where('booking_id', $filters['bookingId']);
+        }
+
+        if (isset($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (isset($filters['method'])) {
+            $query->where('method', $filters['method']);
+        }
+
+        if (isset($filters['startDate'])) {
+            $query->whereDate('created_at', '>=', $filters['startDate']);
+        }
+
+        if (isset($filters['endDate'])) {
+            $query->whereDate('created_at', '<=', $filters['endDate']);
+        }
+
+        return $query->with(['booking'])->orderBy('created_at', 'desc')->get();
+    }
 }
