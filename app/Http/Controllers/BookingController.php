@@ -88,4 +88,38 @@ class BookingController extends Controller
 
         return response()->json($result);
     }
+
+    /**
+     * GET /api/bookings/{bookingId}
+     * Public-safe booking detail with optional auth
+     */
+    public function showBookingPublic(string $bookingId, Request $request): JsonResponse
+    {
+        $booking = $this->bookingService->getBookingById($bookingId);
+
+        if (!$booking) {
+            return $this->respond(null, 'Booking not found', 404);
+        }
+
+        $user = $request->user();
+
+        if ($user) {
+            if ($user->hasRole('ADMIN') || $booking->user_id === $user->user_id) {
+                return $this->respond($this->bookingService->mapBookingToResponse($booking), 'OK', 200);
+            }
+
+            return $this->respond(null, 'Forbidden', 403);
+        }
+
+        return $this->respond($this->bookingService->mapBookingToPublicResponse($booking), 'OK', 200);
+    }
+
+    protected function respond($data = null, string $message = 'OK', int $code = 200): JsonResponse
+    {
+        return response()->json([
+            'code' => $code,
+            'message' => $message,
+            'data' => $data,
+        ], $code);
+    }
 }
