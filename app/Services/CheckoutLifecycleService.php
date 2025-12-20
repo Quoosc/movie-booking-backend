@@ -156,7 +156,7 @@ class CheckoutLifecycleService
             $expectedGatewayAmount = $this->resolveGatewayAmount($payment);
             if (
                 $gatewayAmount !== null && $expectedGatewayAmount !== null
-                && (float) $expectedGatewayAmount !== (float) $gatewayAmount
+                && abs((float) $expectedGatewayAmount - (float) $gatewayAmount) > 0.01
             ) {
 
                 $currency = $this->resolveGatewayCurrency($payment);
@@ -259,7 +259,7 @@ class CheckoutLifecycleService
             $expectedGatewayAmount = $this->resolveGatewayAmount($payment);
             if (
                 $gatewayAmount !== null && $expectedGatewayAmount !== null
-                && (float) $expectedGatewayAmount !== (float) $gatewayAmount
+                && abs((float) $expectedGatewayAmount - (float) $gatewayAmount) > 0.01
             ) {
 
                 $currency = $this->resolveGatewayCurrency($payment);
@@ -277,7 +277,7 @@ class CheckoutLifecycleService
 
                 $this->showtimeSeatModel->newQuery()
                     ->whereIn('showtime_seat_id', $seatIds)
-                    ->update(['status' => SeatStatus::BOOKED]);
+                    ->update(['seat_status' => SeatStatus::BOOKED->value]);
 
                 $booking->status = BookingStatus::CONFIRMED;
                 $booking->qr_payload = $this->generateQrPayload($booking);

@@ -141,7 +141,7 @@ class PayPalService
                 ],
             ];
 
-            \Log::info('[paypal] createOrder payload', [
+            Log::info('[paypal] createOrder payload', [
                 'bookingId' => $booking->booking_id,
                 'orderPayload' => $orderPayload,
             ]);
@@ -204,6 +204,11 @@ class PayPalService
 
             // If already processed, return current state (idempotent)
             if ($payment->status !== PaymentStatus::PENDING) {
+                Log::info('[paypal] capture skipped - payment already processed', [
+                    'orderId' => $cleanOrderId,
+                    'paymentId' => $payment->payment_id,
+                    'paymentStatus' => $payment->status?->value ?? $payment->status,
+                ]);
                 $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($payment);
                 return new PaymentResponse(
                     paymentId: $resp['paymentId'],
@@ -214,22 +219,30 @@ class PayPalService
                 );
             }
 
-            if ($booking->status !== BookingStatus::PENDING_PAYMENT) {
+            if (!in_array($booking->status, [BookingStatus::PENDING_PAYMENT, BookingStatus::EXPIRED], true)) {
+                Log::warning('[paypal] capture blocked - booking status not payable', [
+                    'orderId' => $cleanOrderId,
+                    'paymentId' => $payment->payment_id,
+                    'bookingId' => $booking->booking_id,
+                    'bookingStatus' => $booking->status?->value ?? $booking->status,
+                ]);
                 throw new CustomException('Booking is not pending payment', Response::HTTP_CONFLICT);
             }
 
             $accessToken = $this->authenticate();
 
             $captureUrl = $this->baseUrl() . "/v2/checkout/orders/{$cleanOrderId}/capture";
-            \Log::info('[paypal] capture start', [
+            Log::info('[paypal] capture start', [
                 'orderId' => $cleanOrderId,
                 'paymentId' => $payment->payment_id,
                 'bookingId' => $booking->booking_id,
+                'bookingStatus' => $booking->status?->value ?? $booking->status,
                 'captureUrl' => $captureUrl,
             ]);
 
             $res = Http::withToken($accessToken)
-                ->post($captureUrl);
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->send('POST', $captureUrl);
 
             if (!$res->successful()) {
                 Log::error('PayPal capture failed', ['status' => $res->status(), 'body' => $res->body()]);
@@ -246,6 +259,7 @@ class PayPalService
             }
 
             $json = $res->json();
+            $paypalStatus = $json['status'] ?? null;
             $captures = $json['purchase_units'][0]['payments']['captures'][0] ?? null;
             $captureId = $captures['id'] ?? null;
             $capturedAmount = $captures['amount']['value'] ?? null;
@@ -255,11 +269,25 @@ class PayPalService
                 'orderId' => $cleanOrderId,
                 'paymentId' => $payment->payment_id,
                 'captureId' => $captureId,
+                'paypalStatus' => $paypalStatus,
                 'capturedAmount' => $capturedAmount,
                 'capturedCurrency' => $capturedCurrency,
                 'expectedAmount' => $payment->gateway_amount,
                 'expectedCurrency' => $payment->gateway_currency,
             ]);
+
+            if ($paypalStatus && strtoupper((string) $paypalStatus) !== 'COMPLETED') {
+                $updated = $this->checkoutLifecycleService()
+                    ->handleFailedPayment($payment, 'PayPal capture status: ' . $paypalStatus);
+                $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($updated);
+                return new PaymentResponse(
+                    paymentId: $resp['paymentId'],
+                    bookingId: $resp['bookingId'],
+                    bookingStatus: $resp['bookingStatus'],
+                    paymentStatus: $resp['status'] ?? null,
+                    qrPayload: $resp['qrPayload'] ?? null,
+                );
+            }
 
             // Validate amount/currency
             $expectedAmount = $payment->gateway_amount;
@@ -273,8 +301,19 @@ class PayPalService
             }
 
             if ($amountMismatch) {
+                Log::warning('[paypal] capture amount mismatch', [
+                    'orderId' => $cleanOrderId,
+                    'paymentId' => $payment->payment_id,
+                    'capturedAmount' => $capturedAmount,
+                    'capturedCurrency' => $capturedCurrency,
+                    'expectedAmount' => $expectedAmount,
+                    'expectedCurrency' => $expectedCurrency,
+                ]);
                 $updated = $this->checkoutLifecycleService()
-                    ->handleFailedPayment($payment, 'PayPal amount or currency mismatch');
+                    ->handleFailedPayment(
+                        $payment,
+                        'PayPal amount or currency mismatch'
+                    );
                 $resp = \App\Transformers\PaymentTransformer::toPaymentResponse($updated);
                 return new PaymentResponse(
                     paymentId: $resp['paymentId'],
