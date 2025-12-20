@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\JwtAuthMiddleware;
+use App\Http\Middleware\OptionalJwtAuthMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -16,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // alias cho middleware JWT và RBAC
         $middleware->alias([
             'auth.jwt' => JwtAuthMiddleware::class,
+            'auth.optional' => OptionalJwtAuthMiddleware::class,
             'role' => \App\Http\Middleware\CheckRole::class,
         ]);
 
