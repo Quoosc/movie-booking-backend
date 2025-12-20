@@ -510,4 +510,72 @@ class BookingService
     {
         return $this->bookingRepository->findById($bookingId);
     }
+
+    /**
+     * Map Booking to Public-safe Response
+     */
+    public function mapBookingToPublicResponse(Booking $booking): array
+    {
+        $booking->loadMissing([
+            'bookingSeats.showtimeSeat.seat',
+            'bookingSeats.ticketType',
+            'bookingSnacks.snack',
+            'payments',
+            'showtime.movie',
+            'showtime.room.cinema',
+        ]);
+
+        $showtime = $booking->showtime;
+        $movie = $showtime?->movie;
+        $room = $showtime?->room;
+        $cinema = $room?->cinema;
+        $posterUrl = $movie?->poster_url ?? $movie?->posterUrl ?? $movie?->poster ?? null;
+
+        $seats = $booking->bookingSeats->map(function ($bs) {
+            $seat = $bs->showtimeSeat?->seat;
+            return [
+                'rowLabel' => $seat?->row_label,
+                'seatNumber' => $seat?->seat_number,
+                'seatType' => $seat?->seat_type,
+                'ticketTypeLabel' => $bs->ticketType?->label ?? null,
+                'price' => (float) $bs->price,
+            ];
+        })->toArray();
+
+        $snacks = $booking->bookingSnacks->map(function ($bs) {
+            $snack = $bs->snack;
+            $unitPrice = $snack ? (float) $snack->price : null;
+            return [
+                'snackId' => $snack?->snack_id,
+                'name' => $snack?->name,
+                'quantity' => $bs->quantity,
+                'unitPrice' => $unitPrice,
+                'totalPrice' => $unitPrice !== null ? $unitPrice * $bs->quantity : null,
+                'imageUrl' => $snack->image_url ?? $snack->imageUrl ?? null,
+            ];
+        })->toArray();
+
+        $latestPayment = $booking->payments
+            ->sortByDesc(fn ($payment) => $payment->created_at ?? $payment->paid_at)
+            ->first();
+
+        return [
+            'bookingId' => $booking->booking_id,
+            'status' => $booking->status->value,
+            'movieTitle' => $movie?->title,
+            'posterUrl' => $posterUrl,
+            'showtimeStartTime' => $showtime?->start_time?->toIso8601String(),
+            'cinemaName' => $cinema?->name,
+            'cinemaAddress' => $cinema?->address ?? null,
+            'roomName' => $room?->room_number,
+            'seats' => $seats,
+            'snacks' => $snacks,
+            'totalPrice' => (float) $booking->total_price,
+            'discountValue' => (float) $booking->discount_value,
+            'finalPrice' => (float) $booking->final_price,
+            'paymentMethod' => $latestPayment?->method?->value ?? null,
+            'paymentStatus' => $latestPayment?->status?->value ?? null,
+            'paidAt' => $latestPayment?->paid_at?->toIso8601String(),
+        ];
+    }
 }
