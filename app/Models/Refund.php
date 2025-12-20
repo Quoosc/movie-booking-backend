@@ -11,8 +11,14 @@ class Refund extends Model
     use HasFactory, HasUuids;
 
     protected $table = 'refunds';
+    protected $primaryKey = 'refund_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    const CREATED_AT = 'created_at';
 
     protected $fillable = [
+        'refund_id',
         'payment_id',
         'booking_id',
         'user_id',
@@ -20,8 +26,10 @@ class Refund extends Model
         'currency',
         'reason',
         'status',
-        'gateway_refund_id',
+        'refund_method',
+        'refund_gateway_txn_id',
         'gateway_response',
+        'created_at',
         'refunded_at',
     ];
 
