@@ -87,13 +87,64 @@ class PaymentController extends Controller
 
         $filters = $request->validate([
             'bookingId' => 'nullable|uuid',
-            'status' => 'nullable|in:PENDING,COMPLETED,FAILED,REFUND_PENDING,REFUNDED,CANCELLED',
-            'method' => 'nullable|in:MOMO,PAYPAL',
+            'userId' => 'nullable|uuid',
+            'status' => 'nullable|string',
+            'method' => 'nullable|string',
             'startDate' => 'nullable|date',
             'endDate' => 'nullable|date|after_or_equal:startDate',
         ]);
 
-        $payments = $this->paymentRepo->searchPaymentsByUser($user->user_id, $filters);
+        $normalizedStatus = null;
+        if (!empty($filters['status'])) {
+            $rawStatus = strtoupper(trim($filters['status']));
+            $statusMap = [
+                'SUCCESS' => 'COMPLETED',
+                'REFUND_FAILED' => 'FAILED',
+                'COMPLETED' => 'COMPLETED',
+                'PENDING' => 'PENDING',
+                'FAILED' => 'FAILED',
+                'REFUND_PENDING' => 'REFUND_PENDING',
+                'REFUNDED' => 'REFUNDED',
+                'CANCELLED' => 'CANCELLED',
+            ];
+            $normalizedStatus = $statusMap[$rawStatus] ?? '__INVALID__';
+        }
+
+        $normalizedMethod = null;
+        if (!empty($filters['method'])) {
+            $rawMethod = strtoupper(trim($filters['method']));
+            $methodMap = [
+                'PAYPAL' => 'PAYPAL',
+                'MOMO' => 'MOMO',
+            ];
+            $normalizedMethod = $methodMap[$rawMethod] ?? '__INVALID__';
+        }
+
+        if ($normalizedStatus === '__INVALID__' || $normalizedMethod === '__INVALID__') {
+            return response()->json([
+                'code' => 200,
+                'data' => [],
+            ]);
+        }
+
+        if ($normalizedStatus) {
+            $filters['status'] = $normalizedStatus;
+        } else {
+            unset($filters['status']);
+        }
+
+        if ($normalizedMethod) {
+            $filters['method'] = $normalizedMethod;
+        } else {
+            unset($filters['method']);
+        }
+
+        if ($user->hasRole('ADMIN')) {
+            $payments = $this->paymentRepo->searchPayments($filters);
+        } else {
+            unset($filters['userId']);
+            $payments = $this->paymentRepo->searchPaymentsByUser($user->user_id, $filters);
+        }
 
         return response()->json([
             'code' => 200,
@@ -102,7 +153,7 @@ class PaymentController extends Controller
                 'bookingId' => $p->booking_id,
                 'amount' => $p->amount,
                 'currency' => $p->currency,
-                'status' => $p->status->value,
+                'status' => \App\Transformers\PaymentTransformer::mapStatusForResponse($p->status->value ?? $p->status),
                 'method' => $p->method->value,
                 'createdAt' => $p->created_at->toIso8601String(),
                 'completedAt' => $p->completed_at?->toIso8601String(),

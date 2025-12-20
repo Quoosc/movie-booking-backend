@@ -6,6 +6,20 @@ use App\Models\Payment;
 
 class PaymentTransformer
 {
+    public static function mapStatusForResponse($status): ?string
+    {
+        if ($status === null) {
+            return null;
+        }
+
+        $value = is_string($status) ? strtoupper($status) : (string) $status;
+        if ($value === 'COMPLETED') {
+            return 'SUCCESS';
+        }
+
+        return $value;
+    }
+
     public static function toPaymentResponse(Payment $payment): array
     {
         $booking = $payment->booking;
@@ -16,7 +30,7 @@ class PaymentTransformer
             'bookingStatus'   => $booking?->status?->value ?? $booking?->status,
             'qrPayload'       => $booking?->qr_payload,
 
-            'status'          => $payment->status?->value ?? $payment->status,
+            'status'          => self::mapStatusForResponse($payment->status?->value ?? $payment->status),
             'method'          => $payment->method?->value ?? $payment->method,
             'amount'          => $payment->amount,
             'currency'        => $payment->currency,
