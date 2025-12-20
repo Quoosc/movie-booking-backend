@@ -164,9 +164,11 @@ Route::prefix('bookings')->group(function () {
     // Chỉ user đăng nhập mới xem được lịch sử
     Route::middleware('auth.jwt')->group(function () {
         Route::get('/my-bookings',              [BookingController::class, 'getUserBookings']);
-        Route::get('/{bookingId}',              [BookingController::class, 'getBookingById']);
         Route::patch('/{bookingId}/qr',         [BookingController::class, 'updateQrCode']);
     });
+
+    // Public booking detail (must be after /my-bookings to avoid route clash)
+    Route::middleware('auth.optional')->get('/{bookingId}', [BookingController::class, 'showBookingPublic']);
 });
 
 // ====== CHECKOUT ======
