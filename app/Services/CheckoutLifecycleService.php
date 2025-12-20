@@ -8,6 +8,7 @@ use App\Models\Refund;
 use App\Models\ShowtimeSeat;
 use App\Enums\BookingStatus;
 use App\Enums\PaymentStatus;
+use App\Enums\RefundStatus;
 use App\Enums\SeatStatus;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -388,6 +389,7 @@ class CheckoutLifecycleService
             $payment->save();
 
             $refund->refund_gateway_txn_id = $gatewayTxnId;
+            $refund->status = RefundStatus::COMPLETED;
             $refund->refunded_at = Carbon::now();
             $refund->save();
         });
