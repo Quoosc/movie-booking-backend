@@ -27,7 +27,7 @@ class UsersSeeder extends Seeder
                 'avatar_url'         => null,
                 'avatar_cloudinary_id' => null,
                 'loyalty_points'     => 0,
-                'membership_tier_id' => $silverTier?->tier_id,
+                'membership_tier_id' => $silverTier?->membership_tier_id,
             ]
         );
     }
