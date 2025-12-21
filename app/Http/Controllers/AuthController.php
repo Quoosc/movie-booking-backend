@@ -33,28 +33,48 @@ class AuthController extends Controller
 {
     $data = $request->validate([
         'username'        => 'required|string|max:255',
-        'email'           => 'required|email|unique:users,email',
+        'email'           => 'required|email',
         'phoneNumber'     => 'nullable|string|max:30',
         'password'        => 'required|string|min:6',
         'confirmPassword' => 'required|string|same:password',
     ]);
 
+    $existing = User::where('email', $data['email'])->first();
+    if ($existing && strtoupper((string) $existing->role) !== 'GUEST') {
+        throw ValidationException::withMessages([
+            'email' => ['Email already exists'],
+        ]);
+    }
+
     $defaultTier = MembershipTier::where('is_active', true)
         ->orderBy('min_points')
         ->first();
 
-    $user = User::create([
-        'username'            => $data['username'],
-        'email'               => $data['email'],
-        'phoneNumber'         => $data['phoneNumber'] ?? null,
-        'password'            => Hash::make($data['password']),
-        'provider'            => 'LOCAL',
-        'role'                => 'USER',
-        'avatar_url'          => null,
-        'avatar_cloudinary_id' => null,
-        'loyalty_points'      => 0,
-        'membership_tier_id'  => $defaultTier?->tier_id,
-    ]);
+    if ($existing) {
+        $existing->username = $data['username'];
+        $existing->phoneNumber = $data['phoneNumber'] ?? $existing->phoneNumber;
+        $existing->password = Hash::make($data['password']);
+        $existing->provider = 'LOCAL';
+        $existing->role = 'USER';
+        if (!$existing->membership_tier_id) {
+            $existing->membership_tier_id = $defaultTier?->membership_tier_id;
+        }
+        $existing->save();
+        $user = $existing;
+    } else {
+        $user = User::create([
+            'username'            => $data['username'],
+            'email'               => $data['email'],
+            'phoneNumber'         => $data['phoneNumber'] ?? null,
+            'password'            => Hash::make($data['password']),
+            'provider'            => 'LOCAL',
+            'role'                => 'USER',
+            'avatar_url'          => null,
+            'avatar_cloudinary_id' => null,
+            'loyalty_points'      => 0,
+            'membership_tier_id'  => $defaultTier?->membership_tier_id,
+        ]);
+    }
 
     $accessToken  = $this->tokenService->generateAccessToken($user);
     $refreshModel = $this->tokenService->generateRefreshToken($user);
