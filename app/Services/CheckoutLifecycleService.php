@@ -99,13 +99,19 @@ class CheckoutLifecycleService
 
     private function createGuestUser(array $guestInfo)
     {
+        $existing = \App\Models\User::where('email', $guestInfo['email'])->first();
+        if ($existing) {
+            return $existing;
+        }
+
         $user = new \App\Models\User();
         $user->user_id = \Illuminate\Support\Str::uuid()->toString();
-        $user->username = $guestInfo['username'];
+        $user->username = $guestInfo['fullName'] ?? $guestInfo['username'] ?? $guestInfo['email'];
         $user->email = $guestInfo['email'];
-        $user->phone_number = $guestInfo['phoneNumber'] ?? null;
+        $user->phoneNumber = $guestInfo['phoneNumber'] ?? null;
         $user->role = 'GUEST';
-        $user->password = bcrypt(\Illuminate\Support\Str::random(32));
+        $user->provider = null;
+        $user->password = null;
         $user->save();
         return $user;
     }

@@ -150,7 +150,8 @@ class CheckoutService
             'email' => $guestInfo['email'],
             'phoneNumber' => $guestInfo['phoneNumber'] ?? null,
             'role' => 'GUEST',
-            'password' => bcrypt(Str::random(32)),
+            'password' => null,
+            'provider' => null,
         ]);
         $user->save();
 
