@@ -443,64 +443,7 @@ class BookingService
      */
     public function mapBookingToResponse(Booking $booking): array
     {
-        $booking->loadMissing([
-            'bookingSeats.showtimeSeat.seat',
-            'bookingSeats.ticketType',
-            'bookingSnacks.snack',
-            'showtime.movie',
-            'showtime.room.cinema',
-        ]);
-
-        $showtime = $booking->showtime;
-        $movie = $showtime?->movie;
-        $room = $showtime?->room;
-        $cinema = $room?->cinema;
-        $posterUrl = $movie?->poster_url ?? $movie?->posterUrl ?? $movie?->poster ?? null;
-
-        $seats = $booking->bookingSeats->map(function ($bs) {
-            $seat = $bs->showtimeSeat?->seat;
-            return [
-                'rowLabel' => $seat?->row_label,
-                'seatNumber' => $seat?->seat_number,
-                'seatType' => $seat?->seat_type,
-                'ticketTypeLabel' => $bs->ticketType?->label ?? null,
-                'price' => (float) $bs->price,
-            ];
-        })->toArray();
-
-        $snacks = $booking->bookingSnacks->map(function ($bs) {
-            $snack = $bs->snack;
-            $unitPrice = $snack ? (float) $snack->price : null;
-            return [
-                'snackId' => $snack?->snack_id,
-                'name' => $snack?->name,
-                'quantity' => $bs->quantity,
-                'unitPrice' => $unitPrice,
-                'totalPrice' => $unitPrice !== null ? $unitPrice * $bs->quantity : null,
-                'imageUrl' => $snack->image_url ?? $snack->imageUrl ?? null,
-            ];
-        })->toArray();
-
-        return [
-            'bookingId' => $booking->booking_id,
-            'showtimeId' => $booking->showtime_id,
-            'movieTitle' => $movie?->title,
-            'posterUrl' => $posterUrl,
-            'showtimeStartTime' => $showtime?->start_time?->toIso8601String(),
-            'cinemaName' => $cinema?->name,
-            'roomName' => $room?->room_number,
-            'seats' => $seats,
-            'snacks' => $snacks,
-            'totalPrice' => (float) $booking->total_price,
-            'discountReason' => $booking->discount_reason,
-            'discountValue' => (float) $booking->discount_value,
-            'finalPrice' => (float) $booking->final_price,
-            'status' => $booking->status->value,
-            'bookedAt' => $booking->booked_at?->toIso8601String(),
-            'qrCode' => $booking->qr_code,
-            'qrPayload' => $booking->qr_payload,
-            'paymentExpiresAt' => $booking->payment_expires_at?->toIso8601String(),
-        ];
+        return $this->buildBookingResponse($booking, true);
     }
 
     /**
@@ -516,11 +459,17 @@ class BookingService
      */
     public function mapBookingToPublicResponse(Booking $booking): array
     {
+        return $this->buildBookingResponse($booking, false);
+    }
+
+    protected function buildBookingResponse(Booking $booking, bool $includeSensitive): array
+    {
         $booking->loadMissing([
             'bookingSeats.showtimeSeat.seat',
             'bookingSeats.ticketType',
             'bookingSnacks.snack',
             'payments',
+            'user',
             'showtime.movie',
             'showtime.room.cinema',
         ]);
@@ -537,8 +486,7 @@ class BookingService
                 'rowLabel' => $seat?->row_label,
                 'seatNumber' => $seat?->seat_number,
                 'seatType' => $seat?->seat_type,
-                'ticketTypeLabel' => $bs->ticketType?->label ?? null,
-                'price' => (float) $bs->price,
+                'price' => $bs->price !== null ? (float) $bs->price : null,
             ];
         })->toArray();
 
@@ -559,23 +507,72 @@ class BookingService
             ->sortByDesc(fn ($payment) => $payment->created_at ?? $payment->paid_at)
             ->first();
 
+        $paymentStatus = $latestPayment
+            ? \App\Transformers\PaymentTransformer::mapStatusForResponse(
+                $latestPayment->status?->value ?? $latestPayment->status
+            )
+            : null;
+
+        $bookingStatus = $booking->status?->value ?? $booking->status;
+        if ($paymentStatus === 'REFUND_PENDING') {
+            $bookingStatus = 'REFUND_PENDING';
+        }
+        if ($paymentStatus === 'REFUNDED' || $booking->refunded) {
+            $bookingStatus = 'REFUNDED';
+        }
+
+        $user = $booking->user;
+        $customerType = $user ? (strtoupper((string) $user->role) === 'GUEST' ? 'GUEST' : 'USER') : null;
+        $membershipTier = null;
+        if ($includeSensitive && $user?->membership_tier_id) {
+            $tier = \App\Models\MembershipTier::find($user->membership_tier_id);
+            if ($tier) {
+                $membershipTier = [
+                    'name' => $tier->name,
+                    'discountType' => $tier->discount_type,
+                    'discountValue' => $tier->discount_value !== null ? (float) $tier->discount_value : null,
+                ];
+            }
+        }
+
         return [
             'bookingId' => $booking->booking_id,
-            'status' => $booking->status->value,
+            'showtimeId' => $booking->showtime_id,
             'movieTitle' => $movie?->title,
             'posterUrl' => $posterUrl,
             'showtimeStartTime' => $showtime?->start_time?->toIso8601String(),
             'cinemaName' => $cinema?->name,
-            'cinemaAddress' => $cinema?->address ?? null,
             'roomName' => $room?->room_number,
+            'format' => $showtime?->format,
             'seats' => $seats,
             'snacks' => $snacks,
             'totalPrice' => (float) $booking->total_price,
+            'discountReason' => $booking->discount_reason,
             'discountValue' => (float) $booking->discount_value,
             'finalPrice' => (float) $booking->final_price,
-            'paymentMethod' => $latestPayment?->method?->value ?? null,
-            'paymentStatus' => $latestPayment?->status?->value ?? null,
-            'paidAt' => $latestPayment?->paid_at?->toIso8601String(),
+            'status' => $bookingStatus,
+            'bookedAt' => $booking->booked_at?->toIso8601String(),
+            'paymentExpiresAt' => $booking->payment_expires_at?->toIso8601String(),
+            'qrCodeUrl' => $booking->qr_code,
+            'qrPayload' => $booking->qr_payload,
+            'customer' => [
+                'type' => $customerType,
+                'userId' => $includeSensitive ? ($user?->user_id ?? null) : null,
+                'username' => $includeSensitive ? ($user?->username ?? null) : null,
+                'fullName' => $includeSensitive ? ($user?->username ?? null) : null,
+                'email' => $includeSensitive ? ($user?->email ?? null) : null,
+                'phoneNumber' => $includeSensitive ? ($user?->phoneNumber ?? null) : null,
+                'membershipTier' => $includeSensitive ? $membershipTier : null,
+            ],
+            'payment' => [
+                'paymentId' => $latestPayment?->payment_id,
+                'status' => $paymentStatus,
+                'method' => $latestPayment?->method?->value ?? null,
+                'amount' => $latestPayment?->amount !== null ? (float) $latestPayment->amount : null,
+                'transactionId' => $latestPayment?->transaction_id ?? $latestPayment?->txn_ref ?? null,
+                'paidAt' => $latestPayment?->paid_at?->toIso8601String()
+                    ?? $latestPayment?->completed_at?->toIso8601String(),
+            ],
         ];
     }
 }
