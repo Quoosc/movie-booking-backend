@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 use App\Models\MembershipTier;
 
 class MembershipTiersSeeder extends Seeder
@@ -22,7 +21,7 @@ class MembershipTiersSeeder extends Seeder
             [
                 'name'          => 'GOLD',
                 'min_points'    => 1000,
-                'discount_type' => 'PERCENT',
+                'discount_type' => 'PERCENTAGE',
                 'discount_value'=> 5,
                 'description'   => 'Thành viên vàng',
                 'is_active'     => true,
@@ -30,7 +29,7 @@ class MembershipTiersSeeder extends Seeder
             [
                 'name'          => 'PLATINUM',
                 'min_points'    => 3000,
-                'discount_type' => 'PERCENT',
+                'discount_type' => 'PERCENTAGE',
                 'discount_value'=> 10,
                 'description'   => 'Thành viên bạch kim',
                 'is_active'     => true,
@@ -40,10 +39,10 @@ class MembershipTiersSeeder extends Seeder
         foreach ($tiers as $tier) {
             MembershipTier::updateOrCreate(
                 ['name' => $tier['name']],
-                array_merge($tier, [
-                    'tier_id' => Str::uuid()->toString(),
-                ])
+                $tier
             );
         }
     }
 }
+
+
