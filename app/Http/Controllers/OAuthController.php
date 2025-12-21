@@ -60,6 +60,7 @@ class OAuthController extends Controller
             ]);
         } elseif (strtoupper((string) $user->role) === 'GUEST') {
             $user->role = 'USER';
+            $user->provider = 'google';
             $user->save();
         }
 
