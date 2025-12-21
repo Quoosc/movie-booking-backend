@@ -32,7 +32,7 @@ class UsersController extends Controller
             'avatarCloudinaryId' => $user->avatar_cloudinary_id,
             'loyaltyPoints'      => $user->loyalty_points,
             'membershipTier' => $tier ? [
-                'membershipTierId' => $tier->tier_id,
+                'membershipTierId' => $tier->membership_tier_id,
                 'name'             => $tier->name,
                 'minPoints'        => $tier->min_points,
                 'discountType'     => $tier->discount_type,
