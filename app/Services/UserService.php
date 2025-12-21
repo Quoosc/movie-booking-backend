@@ -104,8 +104,8 @@ class UserService
         // public function getAppropriateTier(int $points): ?MembershipTier
         $tier = $this->membershipTierService->getAppropriateTier($user->loyalty_points ?? 0);
 
-        if ($tier && $user->membership_tier_id !== $tier->id) {
-            $user->membership_tier_id = $tier->id;
+        if ($tier && $user->membership_tier_id !== $tier->membership_tier_id) {
+            $user->membership_tier_id = $tier->membership_tier_id;
         }
     }
 

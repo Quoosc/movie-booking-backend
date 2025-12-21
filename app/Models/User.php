@@ -56,7 +56,7 @@ class User extends Authenticatable
 
     public function membershipTier()
     {
-        return $this->belongsTo(MembershipTier::class, 'membership_tier_id', 'tier_id');
+        return $this->belongsTo(MembershipTier::class, 'membership_tier_id', 'membership_tier_id');
     }
 
     public function refreshTokens()
