@@ -7,11 +7,16 @@ use App\Enums\LockOwnerType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Exceptions\CustomException;
+use App\Services\TokenService;
 use Illuminate\Support\Str;
 
 class SessionHelper
 {
     public const SESSION_HEADER = 'X-Session-Id';
+
+    public function __construct(
+        private TokenService $tokenService
+    ) {}
 
     /**
      * Extract session context from request (required)
@@ -20,7 +25,26 @@ class SessionHelper
     public function extractSessionContext(Request $request): SessionContext
     {
         // 1. Check JWT authentication
-        $user = Auth::guard('api')->user();
+        $user = Auth::user();
+
+        if (!$user) {
+            $token = $request->bearerToken();
+            if ($token) {
+                $user = $this->tokenService->getUserFromAccessToken($token);
+            }
+        }
+
+        if (!$user) {
+            $cookieToken = $request->cookie('access_token');
+            if ($cookieToken) {
+                $user = $this->tokenService->getUserFromAccessToken($cookieToken);
+            }
+        }
+
+        if ($user) {
+            Auth::setUser($user);
+            $request->setUserResolver(fn () => $user);
+        }
 
         if ($user) {
             return SessionContext::forUser($user->user_id);
