@@ -1,8 +1,8 @@
 <?php
-// app/ValueObjects/DiscountResult.php
 
 namespace App\ValueObjects;
 
+// app/ValueObjects/DiscountResult.php
 class DiscountResult
 {
     public function __construct(

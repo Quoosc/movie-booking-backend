@@ -1,8 +1,8 @@
 <?php
 
-// app/Models/MembershipTier.php
 namespace App\Models;
 
+// app/Models/MembershipTier.php
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;

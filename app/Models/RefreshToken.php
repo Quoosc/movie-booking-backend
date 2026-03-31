@@ -1,7 +1,8 @@
 <?php
-// app/Models/RefreshToken.php
+
 namespace App\Models;
 
+// app/Models/RefreshToken.php
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;

@@ -2,10 +2,12 @@
 
 namespace App\Console\Commands;
 
-use App\Models\{SeatLock, ShowtimeSeat, Booking};
+use App\Models\SeatLock;
+use App\Models\ShowtimeSeat;
+use App\Models\Booking;
 use App\Enums\SeatStatus;
 use App\Enums\BookingStatus;
-use App\Services\RedisLockService;
+use App\Shared\Services\RedisLockService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;

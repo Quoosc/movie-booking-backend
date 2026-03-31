@@ -1,8 +1,8 @@
 <?php
-// app/ValueObjects/PriceBreakdown.php
 
 namespace App\ValueObjects;
 
+// app/ValueObjects/PriceBreakdown.php
 class PriceBreakdown
 {
     public float $basePrice;

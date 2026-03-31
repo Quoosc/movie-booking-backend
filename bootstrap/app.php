@@ -3,8 +3,8 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use App\Http\Middleware\JwtAuthMiddleware;
-use App\Http\Middleware\OptionalJwtAuthMiddleware;
+use App\Core\Http\Middleware\JwtAuthMiddleware;
+use App\Core\Http\Middleware\OptionalJwtAuthMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -18,12 +18,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.jwt' => JwtAuthMiddleware::class,
             'auth.optional' => OptionalJwtAuthMiddleware::class,
-            'role' => \App\Http\Middleware\CheckRole::class,
+            'role' => \App\Core\Http\Middleware\CheckRole::class,
         ]);
 
         // Use custom cookie encryption exclusions (access_token/refresh_token)
         $middleware->web(replace: [
-            \Illuminate\Cookie\Middleware\EncryptCookies::class => \App\Http\Middleware\EncryptCookies::class,
+            \Illuminate\Cookie\Middleware\EncryptCookies::class => \App\Core\Http\Middleware\EncryptCookies::class,
         ]);
 
         // Enable CORS globally

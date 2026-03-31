@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\User;
-use App\Services\MembershipTierService;
+use App\Modules\Membership\Services\MembershipTierService;
 use Illuminate\Console\Command;
 
 class BackfillMembershipTiersCommand extends Command

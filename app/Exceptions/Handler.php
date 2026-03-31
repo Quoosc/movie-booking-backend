@@ -5,7 +5,11 @@ namespace App\Exceptions;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Throwable;
 use Illuminate\Support\Facades\Log;
-use App\Exceptions\{CustomException, ResourceNotFoundException, SeatLockedException, LockExpiredException, MaxSeatsExceededException};
+use App\Exceptions\CustomException;
+use App\Exceptions\ResourceNotFoundException;
+use App\Exceptions\SeatLockedException;
+use App\Exceptions\LockExpiredException;
+use App\Exceptions\MaxSeatsExceededException;
 
 class Handler extends ExceptionHandler
 {

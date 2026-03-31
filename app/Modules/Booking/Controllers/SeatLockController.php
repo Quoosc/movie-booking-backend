@@ -1,0 +1,61 @@
+<?php
+
+namespace App\Modules\Booking\Controllers;
+
+use App\Core\Http\Controllers\BaseController;
+
+use App\Modules\Booking\Services\BookingService;
+use App\Core\Helpers\SessionHelper;
+use App\Modules\Booking\Requests\LockSeatsRequest;
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+
+class SeatLockController extends BaseController
+{
+    public function __construct(
+        protected BookingService $bookingService,
+        protected SessionHelper $sessionHelper
+    ) {}
+
+    /**
+     * POST /api/seat-locks
+     */
+    public function lockSeats(LockSeatsRequest $request): JsonResponse
+    {
+        $sessionContext = $this->sessionHelper->extractSessionContext($request);
+
+        $result = $this->bookingService->lockSeats($request->validated(), $sessionContext);
+
+        return response()->json(
+            $result,
+            201
+        )->header('X-Lock-Owner-Type', $sessionContext->getLockOwnerType()->value);
+    }
+
+    /**
+     * DELETE /api/seat-locks/showtime/{showtimeId}
+     */
+    public function releaseSeats(string $showtimeId): JsonResponse
+    {
+        $sessionContext = $this->sessionHelper->extractSessionContext(request());
+
+        $this->bookingService->releaseSeats(
+            $sessionContext->getLockOwnerId(),
+            $showtimeId
+        );
+
+        return response()->json([], 200);
+    }
+
+    /**
+     * GET /api/seat-locks/availability/showtime/{showtimeId}
+     */
+    public function checkAvailability(string $showtimeId): JsonResponse
+    {
+        $sessionContext = $this->sessionHelper->extractSessionContextOptional(request());
+
+        $result = $this->bookingService->checkAvailability($showtimeId, $sessionContext);
+
+        return response()->json($result);
+    }
+}
