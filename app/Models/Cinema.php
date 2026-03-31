@@ -19,6 +19,8 @@ class Cinema extends Model
         'name',
         'address',
         'hotline',
+        'hero_image_url',
+        'hero_image_cloudinary_id',
         'status',
         'is_active',
     ];

@@ -13,6 +13,8 @@ class CinemaResource extends JsonResource
             'name'        => $this->name,
             'address'     => $this->address,
             'hotline'     => $this->hotline,
+            'heroImageUrl' => $this->hero_image_url,
+            'heroImageCloudinaryId' => $this->hero_image_cloudinary_id,
             'status'      => $this->status,
             'isActive'    => (bool) $this->is_active,
             'createdAt'   => $this->created_at,

@@ -100,6 +100,8 @@ class CinemaController extends BaseController
             'name'     => 'required|string|max:255',
             'address'  => 'required|string|max:255',
             'hotline'  => 'required|string|max:30',
+            'heroImageUrl' => 'nullable|string|max:2048',
+            'heroImageCloudinaryId' => 'nullable|string|max:255',
             'isActive' => 'sometimes|boolean',
         ]);
 
@@ -108,6 +110,8 @@ class CinemaController extends BaseController
         $cinema->name      = $data['name'];
         $cinema->address   = $data['address'];
         $cinema->hotline   = $data['hotline'];
+        $cinema->hero_image_url = $data['heroImageUrl'] ?? null;
+        $cinema->hero_image_cloudinary_id = $data['heroImageCloudinaryId'] ?? null;
         $cinema->is_active = $data['isActive'] ?? true;
         $cinema->status    = $cinema->is_active ? 'ACTIVE' : 'INACTIVE';
         $cinema->save();
@@ -126,12 +130,20 @@ class CinemaController extends BaseController
             'name'     => 'sometimes|required|string|max:255',
             'address'  => 'sometimes|required|string|max:255',
             'hotline'  => 'sometimes|required|string|max:30',
+            'heroImageUrl' => 'sometimes|nullable|string|max:2048',
+            'heroImageCloudinaryId' => 'sometimes|nullable|string|max:255',
             'isActive' => 'sometimes|boolean',
         ]);
 
         if (array_key_exists('name', $data))     $cinema->name     = $data['name'];
         if (array_key_exists('address', $data))  $cinema->address  = $data['address'];
         if (array_key_exists('hotline', $data))  $cinema->hotline  = $data['hotline'];
+        if (array_key_exists('heroImageUrl', $data)) {
+            $cinema->hero_image_url = $data['heroImageUrl'];
+        }
+        if (array_key_exists('heroImageCloudinaryId', $data)) {
+            $cinema->hero_image_cloudinary_id = $data['heroImageCloudinaryId'];
+        }
         if (array_key_exists('isActive', $data)) {
             $cinema->is_active = $data['isActive'];
             $cinema->status    = $data['isActive'] ? 'ACTIVE' : 'INACTIVE';
