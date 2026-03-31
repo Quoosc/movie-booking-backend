@@ -1,178 +1,157 @@
-# PROJECT_STRUCTURE.md — Cấu trúc dự án Backend Laravel
+# PROJECT_STRUCTURE.md — Cấu trúc dự án Backend Laravel (Modular)
 
 ## Tổng quan
 
-Dự án sử dụng **Laravel 11** (PHP 8.2+) với kiến trúc **Service-Repository pattern**.
-Database: **MySQL** (`movie_booking_laravel`). Authentication: **JWT** (custom middleware).
-Payment: **PayPal** (sandbox) + **Momo**. OAuth2: **Google**.
+Dự án sử dụng Laravel 11 (PHP 8.2+) với kiến trúc modular theo domain.
 
-```
+- Domain code đặt trong `app/Modules/<Domain>`.
+- Thành phần framework/core đặt trong `app/Core`.
+- Thành phần shared cross-domain đặt trong `app/Shared`.
+- API routes được tách file theo domain trong `routes/api/*.php` và nạp qua `routes/api.php`.
+
+## Cây thư mục chính
+
+```text
 movie-booking-backend-laravel/
 ├── app/
-│   ├── Auth/                        # JWT token helper
-│   ├── Console/                     # Artisan commands
-│   ├── DTO/                         # Data Transfer Objects
-│   │   ├── Bookings/
-│   │   │   ├── LockSeatsRequest.php
-│   │   │   └── LockSeatsResponse.php
-│   │   ├── Payments/
-│   │   │   ├── InitiatePaymentRequest.php
-│   │   │   ├── InitiatePaymentResponse.php
-│   │   │   ├── IpnResponse.php
-│   │   │   └── PaymentResponse.php
-│   │   └── SessionContext.php       # User/Guest session context
+│   ├── Core/
+│   │   ├── Auth/
+│   │   │   └── JwtGuard.php
+│   │   ├── Helpers/
+│   │   │   └── SessionHelper.php
+│   │   └── Http/
+│   │       ├── Controllers/
+│   │       │   └── BaseController.php
+│   │       └── Middleware/
+│   │           ├── JwtAuthMiddleware.php
+│   │           ├── OptionalJwtAuthMiddleware.php
+│   │           ├── CheckRole.php
+│   │           └── EncryptCookies.php
 │   │
-│   ├── Enums/                       # PHP 8.1 backed enums
-│   │   ├── BookingStatus.php        # PENDING_PAYMENT, CONFIRMED, CANCELLED, EXPIRED
-│   │   ├── PaymentStatus.php        # PENDING, COMPLETED, FAILED, REFUNDED, CANCELLED, REFUND_PENDING
-│   │   ├── PaymentMethod.php        # PAYPAL, MOMO
-│   │   ├── SeatStatus.php           # AVAILABLE, LOCKED, BOOKED
-│   │   ├── RefundStatus.php         # PENDING, COMPLETED, FAILED
-│   │   └── LockOwnerType.php        # USER, GUEST_SESSION
+│   ├── Shared/
+│   │   ├── Services/
+│   │   │   ├── TokenService.php
+│   │   │   ├── ExchangeRateService.php
+│   │   │   └── RedisLockService.php
+│   │   └── Support/
+│   │       └── SecurityUtils.php
 │   │
-│   ├── Exceptions/                  # Custom exception handlers
-│   ├── Helpers/                     # Utility functions
+│   ├── Modules/
+│   │   ├── Booking/
+│   │   │   ├── Controllers/
+│   │   │   ├── Requests/
+│   │   │   ├── DTO/
+│   │   │   ├── Repositories/
+│   │   │   ├── Services/
+│   │   │   └── Transformers/
+│   │   ├── Payment/
+│   │   │   ├── Controllers/
+│   │   │   │   └── Gateways/
+│   │   │   ├── DTO/
+│   │   │   ├── Requests/
+│   │   │   ├── Repositories/
+│   │   │   ├── Services/
+│   │   │   └── Transformers/
+│   │   ├── Movie/
+│   │   │   ├── Controllers/
+│   │   │   └── Resources/
+│   │   ├── User/
+│   │   │   ├── Controllers/
+│   │   │   └── Services/
+│   │   ├── Membership/
+│   │   │   ├── Controllers/
+│   │   │   ├── Resources/
+│   │   │   └── Services/
+│   │   ├── Cinema/
+│   │   │   ├── Controllers/
+│   │   │   ├── Resources/
+│   │   │   └── Services/
+│   │   ├── Showtime/
+│   │   │   ├── Controllers/
+│   │   │   ├── Repositories/
+│   │   │   ├── Resources/
+│   │   │   ├── Services/
+│   │   │   └── Transformers/
+│   │   ├── Ticketing/
+│   │   │   ├── Controllers/
+│   │   │   ├── Resources/
+│   │   │   └── Services/
+│   │   ├── Pricing/
+│   │   │   ├── Controllers/
+│   │   │   ├── Resources/
+│   │   │   └── Services/
+│   │   └── Promotion/
+│   │       ├── Controllers/
+│   │       ├── Resources/
+│   │       └── Services/
 │   │
-│   ├── Http/
-│   │   ├── Controllers/             # 23 controllers
-│   │   │   ├── AuthController.php           # Login, register, logout, refresh
-│   │   │   ├── MovieController.php          # CRUD + public browsing + showtimes
-│   │   │   ├── CinemaController.php         # CRUD cinemas, rooms, snacks
-│   │   │   ├── ShowtimeController.php       # CRUD showtimes
-│   │   │   ├── SeatController.php           # CRUD seats + layout + generate
-│   │   │   ├── ShowtimeSeatController.php   # Showtime seat status/price
-│   │   │   ├── TicketTypeController.php     # Ticket type CRUD
-│   │   │   ├── ShowtimeTicketTypeController.php  # Assign ticket types to showtimes
-│   │   │   ├── PriceBaseController.php      # Base pricing CRUD
-│   │   │   ├── PriceModifierController.php  # Price modifier CRUD
-│   │   │   ├── PromotionController.php      # Promotion CRUD + validate
-│   │   │   ├── SeatLockController.php       # Lock/release seats
-│   │   │   ├── BookingController.php        # Price preview, confirm, history
-│   │   │   ├── CheckoutController.php       # One-step checkout
-│   │   │   ├── PaymentController.php        # Initiate + capture payment
-│   │   │   ├── RefundController.php         # Refund processing
-│   │   │   ├── UsersController.php          # Profile + admin user management
-│   │   │   ├── MembershipTierController.php # Membership tier CRUD
-│   │   │   ├── OAuthController.php          # Google OAuth2
-│   │   │   └── Payments/
-│   │   │       ├── MomoController.php       # Momo-specific logic
-│   │   │       └── PayPalController.php     # PayPal-specific logic
-│   │   │
-│   │   ├── Middleware/
-│   │   │   ├── JwtAuthMiddleware.php        # auth.jwt — validate JWT token
-│   │   │   ├── OptionalJwtAuthMiddleware.php # auth.optional — JWT if present
-│   │   │   ├── CheckRole.php                # role:admin — check ADMIN role
-│   │   │   └── EncryptCookies.php
-│   │   │
-│   │   ├── Requests/                # Form Request Validation
-│   │   │   ├── LockSeatsRequest.php
-│   │   │   ├── PricePreviewRequest.php
-│   │   │   ├── ConfirmBookingRequest.php
-│   │   │   ├── CheckoutRequest.php
-│   │   │   ├── InitiatePaymentRequest.php
-│   │   │   ├── ConfirmPaymentRequest.php
-│   │   │   ├── PaymentSearchRequest.php
-│   │   │   ├── RefundRequest.php
-│   │   │   └── UpdateQrCodeRequest.php
-│   │   │
-│   │   └── Resources/              # API Resource Transformers
-│   │       ├── MovieResource.php
-│   │       ├── CinemaResource.php
-│   │       ├── RoomResource.php
-│   │       ├── ShowtimeResource.php
-│   │       ├── SeatResource.php
-│   │       ├── ShowtimeSeatResource.php
-│   │       ├── SnackResource.php
-│   │       ├── TicketTypeResource.php
-│   │       ├── TicketTypePublicResource.php
-│   │       ├── PriceBaseResource.php
-│   │       ├── PriceModifierResource.php
-│   │       ├── PromotionResource.php
-│   │       └── MembershipTierResource.php
-│   │
-│   ├── Models/                      # 23 Eloquent models
-│   │   ├── User.php
-│   │   ├── Movie.php, Cinema.php, Room.php
-│   │   ├── Showtime.php, Seat.php, ShowtimeSeat.php
-│   │   ├── TicketType.php, ShowtimeTicketType.php
-│   │   ├── SeatLock.php, SeatLockSeat.php
-│   │   ├── PriceBase.php, PriceModifier.php
-│   │   ├── Promotion.php
-│   │   ├── Booking.php, BookingSeat.php, BookingSnack.php, BookingPromotion.php
-│   │   ├── Snack.php
-│   │   ├── Payment.php, Refund.php
-│   │   ├── MembershipTier.php, RefreshToken.php
-│   │
-│   ├── Repositories/                # Data access layer
-│   │   ├── BookingRepository.php
-│   │   ├── PaymentRepository.php
-│   │   ├── RefundRepository.php
-│   │   ├── SeatLockRepository.php
-│   │   └── ShowtimeSeatRepository.php
-│   │
-│   ├── Services/                    # 22 business logic services
-│   │   ├── BookingService.php       # Core booking logic
-│   │   ├── CheckoutService.php      # Checkout orchestration
-│   │   ├── CheckoutLifecycleService.php  # Checkout state transitions
-│   │   ├── CinemaService.php
-│   │   ├── ExchangeRateService.php  # VND ↔ USD conversion
-│   │   ├── MembershipTierService.php
-│   │   ├── MomoService.php          # Momo payment gateway
-│   │   ├── PayPalService.php        # PayPal payment gateway
-│   │   ├── PriceCalculationService.php  # Dynamic pricing engine
-│   │   ├── PriceBaseService.php
-│   │   ├── PriceModifierService.php
-│   │   ├── PromotionService.php
-│   │   ├── RedisLockService.php     # Distributed locking
-│   │   ├── RefundService.php
-│   │   ├── SeatLayoutService.php    # Seat layout for showtime
-│   │   ├── SeatService.php          # Seat CRUD + generate
-│   │   ├── ShowtimeSeatService.php
-│   │   ├── ShowtimeTicketTypeService.php
-│   │   ├── TicketTypeService.php
-│   │   ├── TokenService.php         # JWT token creation/validation
-│   │   └── UserService.php
-│   │
-│   ├── Transformers/                # Response transformers
-│   │   ├── BookingTransformer.php
-│   │   ├── PaymentTransformer.php
-│   │   └── ShowtimeSeatTransformer.php
-│   │
-│   ├── ValueObjects/                # Immutable value types
-│   ├── Support/                     # Support utilities
-│   └── Providers/                   # Service providers
-│
-├── config/
-│   ├── jwt.php                      # JWT secret, TTL, issuer
-│   ├── payment.php                  # PayPal + Momo + exchange rate config
-│   ├── booking.php                  # Lock duration, max seats, payment timeout
-│   ├── cors.php                     # CORS configuration
-│   ├── currency.php                 # Currency settings
-│   └── ...                          # Standard Laravel configs
-│
-├── database/
-│   ├── migrations/                  # 32 migration files → 23 tables
-│   ├── seeders/
-│   └── factories/
+│   ├── Console/
+│   ├── DTO/
+│   ├── Enums/
+│   ├── Exceptions/
+│   ├── Models/
+│   ├── Providers/
+│   └── ValueObjects/
 │
 ├── routes/
-│   ├── api.php                      # Tất cả API routes (340 lines)
-│   ├── web.php                      # OAuth2 callback routes
+│   ├── api.php
+│   ├── api/
+│   │   ├── auth.php
+│   │   ├── movie.php
+│   │   ├── cinema.php
+│   │   ├── showtime.php
+│   │   ├── ticketing.php
+│   │   ├── pricing.php
+│   │   ├── promotion.php
+│   │   ├── booking.php
+│   │   ├── payment.php
+│   │   ├── user.php
+│   │   ├── membership.php
+│   │   ├── admin.php
+│   │   └── misc.php
+│   ├── web.php
 │   └── console.php
 │
-└── .env                             # Environment configuration
+├── config/
+├── database/
+├── docs/
+└── tests/
 ```
 
-## Quy ước quan trọng
+## Quy ước tổ chức mã
 
-| Concept | Quy tắc |
-|---------|---------|
-| **Primary Key** | Tất cả bảng dùng **UUID** |
-| **Auth** | JWT custom middleware (`auth.jwt`) — không dùng Sanctum/Passport |
-| **Guest support** | Header `X-Session-Id` cho guest checkout, middleware `auth.optional` |
-| **Admin guard** | Middleware chain: `auth.jwt` + `role:admin` |
-| **Response format** | `{ code: 200, message: "...", data: {...} }` |
-| **API prefix** | `/api/...` (Laravel auto-prefix) |
-| **Enum** | PHP 8.1 backed enums (`BookingStatus`, `PaymentMethod`, ...) |
-| **Pricing** | Dynamic: PriceBase → PriceModifiers → final price per seat |
-| **Currency** | VND (default), auto-convert sang USD cho PayPal |
+1. Mỗi domain module tự quản lý Controller/Request/Service/Repository/Resource của riêng nó.
+2. Logic dùng chung qua nhiều domain đặt ở `app/Shared`.
+3. Thành phần technical framework-level (guard, middleware, base controller) đặt ở `app/Core`.
+4. Model Eloquent hiện vẫn tập trung ở `app/Models` để tương thích Laravel mặc định.
+5. `routes/api.php` chỉ làm nhiệm vụ nạp các file route con theo domain.
+
+## Routing modular
+
+File `routes/api.php` hiện không chứa route business trực tiếp, mà chỉ `require` các file:
+
+- `routes/api/auth.php`
+- `routes/api/movie.php`
+- `routes/api/cinema.php`
+- `routes/api/showtime.php`
+- `routes/api/ticketing.php`
+- `routes/api/promotion.php`
+- `routes/api/booking.php`
+- `routes/api/payment.php`
+- `routes/api/user.php`
+- `routes/api/membership.php`
+- `routes/api/pricing.php`
+- `routes/api/admin.php`
+- `routes/api/misc.php`
+
+## Trạng thái xác thực sau refactor
+
+- Route registry: chạy thành công (`php artisan route:list`).
+- Test suite hiện tại: pass (`php artisan test`):
+    - 2 tests passed
+    - 2 assertions
+
+## Ghi chú
+
+- Cấu trúc đã chuyển từ monolithic `app/Http/Controllers` và `app/Services` sang domain modules.
+- Nếu bổ sung domain mới, tạo thêm `app/Modules/<NewDomain>` và `routes/api/<new-domain>.php`, sau đó include trong `routes/api.php`.
