@@ -7,6 +7,7 @@ require __DIR__ . '/api/cinema.php';
 require __DIR__ . '/api/showtime.php';
 require __DIR__ . '/api/ticketing.php';
 require __DIR__ . '/api/promotion.php';
+require __DIR__ . '/api/hero-slide.php';
 require __DIR__ . '/api/booking.php';
 require __DIR__ . '/api/payment.php';
 require __DIR__ . '/api/user.php';
