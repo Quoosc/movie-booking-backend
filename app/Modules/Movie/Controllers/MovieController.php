@@ -15,6 +15,9 @@ use Symfony\Component\HttpFoundation\Response;
 use Illuminate\Support\Facades\Auth;
 
 
+use Illuminate\Support\Facades\DB;
+
+
 class MovieController extends BaseController
 {
     // ======== COMMON RESPONSE HELPER (giống AuthController) ========
@@ -157,7 +160,6 @@ class MovieController extends BaseController
     }
 
     // ========= PUBLIC: GET /movies =========
-    // Nếu có query title/genre/status => search nâng cao giống Spring
     public function index(Request $request)
     {
         $title  = $request->query('title');
@@ -184,6 +186,9 @@ class MovieController extends BaseController
         return $this->respond(MovieResource::collection($movies));
     }
 
+
+
+
     // ========= PUBLIC: GET /movies/search/title?title= =========
     public function searchByTitle(Request $request)
     {
@@ -197,6 +202,16 @@ class MovieController extends BaseController
 
         return $this->respond(MovieResource::collection($movies));
     }
+
+//   public function searchByTitle(Request $request)
+// {
+//     $title = $request->query('title'); 
+
+//     $query = "SELECT * FROM movies WHERE title LIKE '%$title%'";
+//     $movies = DB::select($query); 
+
+//     return $this->respond(MovieResource::collection($movies));
+// }
 
     // ========= PUBLIC: GET /movies/filter/status?status=SHOWING =========
     public function filterByStatus(Request $request)
