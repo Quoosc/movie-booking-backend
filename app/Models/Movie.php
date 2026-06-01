@@ -31,6 +31,11 @@ class Movie extends Model
         'trailer_url',
         'status',
         'language',
+        'premiere_date',
+    ];
+
+    protected $casts = [
+        'premiere_date' => 'date:Y-m-d',
     ];
 
     protected static function boot()
@@ -48,5 +53,10 @@ class Movie extends Model
     public function showtimes()
     {
         return $this->hasMany(Showtime::class, 'movie_id', 'movie_id');
+    }
+
+    public function reviews()
+    {
+        return $this->hasMany(\App\Models\MovieReview::class, 'movie_id', 'movie_id');
     }
 }

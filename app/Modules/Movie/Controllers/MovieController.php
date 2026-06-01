@@ -57,23 +57,25 @@ class MovieController extends BaseController
             'posterUrl'   => 'nullable|url',
             'posterCloudinaryId' => 'nullable|string|max:255',
             'trailerUrl'  => 'nullable|url',
-            'status'      => 'required|in:SHOWING,UPCOMING',
-            'language'    => 'nullable|string|max:50',
+            'status'        => 'required|in:SHOWING,UPCOMING',
+            'language'      => 'nullable|string|max:50',
+            'premiereDate'  => 'nullable|date',
         ]);
 
         $movie = Movie::create([
-            'title'               => $validated['title'],
-            'genre'               => $validated['genre'] ?? null,
-            'description'         => $validated['description'] ?? null,
-            'duration'            => $validated['duration'],
-            'minimum_age'         => $validated['minimumAge'] ?? null,
-            'director'            => $validated['director'] ?? null,
-            'actors'              => $validated['actors'] ?? null,
-            'poster_url'          => $validated['posterUrl'] ?? null,
+            'title'                => $validated['title'],
+            'genre'                => $validated['genre'] ?? null,
+            'description'          => $validated['description'] ?? null,
+            'duration'             => $validated['duration'],
+            'minimum_age'          => $validated['minimumAge'] ?? null,
+            'director'             => $validated['director'] ?? null,
+            'actors'               => $validated['actors'] ?? null,
+            'poster_url'           => $validated['posterUrl'] ?? null,
             'poster_cloudinary_id' => $validated['posterCloudinaryId'] ?? null,
-            'trailer_url'         => $validated['trailerUrl'] ?? null,
-            'status'              => $validated['status'],
-            'language'            => $validated['language'] ?? null,
+            'trailer_url'          => $validated['trailerUrl'] ?? null,
+            'status'               => $validated['status'],
+            'language'             => $validated['language'] ?? null,
+            'premiere_date'        => $validated['premiereDate'] ?? null,
         ]);
 
         return MovieResource::make($movie);
@@ -101,9 +103,9 @@ class MovieController extends BaseController
             'trailerUrl'         => ['sometimes', 'nullable', 'string', 'max:500'],
             'status'             => ['sometimes', Rule::in(['SHOWING', 'UPCOMING'])],
             'language'           => ['sometimes', 'nullable', 'string', 'max:100'],
+            'premiereDate'       => ['sometimes', 'nullable', 'date'],
         ]);
 
-        // map từng field nếu có
         foreach ($data as $key => $value) {
             switch ($key) {
                 case 'minimumAge':
@@ -118,8 +120,10 @@ class MovieController extends BaseController
                 case 'trailerUrl':
                     $movie->trailer_url = $value;
                     break;
+                case 'premiereDate':
+                    $movie->premiere_date = $value;
+                    break;
                 default:
-                    // title, genre, description, duration, director, actors, status, language
                     $movie->{$key} = $value;
             }
         }
@@ -154,7 +158,7 @@ class MovieController extends BaseController
     // ========= PUBLIC: GET /movies/{movieId} =========
     public function show(string $movieId)
     {
-        $movie = Movie::findOrFail($movieId);
+        $movie = Movie::withAvg('reviews', 'rating')->withCount('reviews')->findOrFail($movieId);
 
         return $this->respond(new MovieResource($movie));
     }
@@ -181,7 +185,9 @@ class MovieController extends BaseController
             $query->where('status', $status);
         }
 
-        $movies = $query->orderBy('created_at', 'desc')->get();
+        $movies = $query->withAvg('reviews', 'rating')->withCount('reviews')
+            ->orderByRaw('COALESCE(premiere_date, created_at) DESC')
+            ->get();
 
         return $this->respond(MovieResource::collection($movies));
     }
@@ -198,7 +204,7 @@ class MovieController extends BaseController
 
         $title  = $request->query('title');
 
-        $movies = Movie::where('title', 'LIKE', '%' . $title . '%')->get();
+        $movies = Movie::withAvg('reviews', 'rating')->withCount('reviews')->where('title', 'LIKE', '%' . $title . '%')->get();
 
         return $this->respond(MovieResource::collection($movies));
     }
@@ -220,7 +226,10 @@ class MovieController extends BaseController
             'status' => ['required', Rule::in(['SHOWING', 'UPCOMING'])],
         ]);
 
-        $movies = Movie::where('status', $request->query('status'))->get();
+        $movies = Movie::withAvg('reviews', 'rating')->withCount('reviews')
+            ->where('status', $request->query('status'))
+            ->orderByRaw('COALESCE(premiere_date, created_at) DESC')
+            ->get();
 
         return $this->respond(MovieResource::collection($movies));
     }
@@ -234,7 +243,7 @@ class MovieController extends BaseController
 
         $genre = $request->query('genre');
 
-        $movies = Movie::where('genre', 'LIKE', '%' . $genre . '%')->get();
+        $movies = Movie::withAvg('reviews', 'rating')->withCount('reviews')->where('genre', 'LIKE', '%' . $genre . '%')->get();
 
         return $this->respond(MovieResource::collection($movies));
     }
@@ -256,6 +265,7 @@ class MovieController extends BaseController
 
         $showtimes = Showtime::with(['room.cinema'])
             ->where('movie_id', $movie->movie_id)
+            ->where('is_active', true)
             ->whereBetween('start_time', [$startOfDay, $endOfDay])
             ->orderBy('start_time')
             ->get();
