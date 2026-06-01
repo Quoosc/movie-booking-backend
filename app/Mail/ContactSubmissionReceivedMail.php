@@ -15,11 +15,16 @@ class ContactSubmissionReceivedMail extends Mailable
 
     public function build()
     {
-        $subject = '[Movie Booking] New contact from ' . $this->submission->name;
+        $isAnonymous = $this->submission->email === 'anonymous@noreply.local';
+
+        $subject = $isAnonymous
+            ? '[CinesVerse] Phản ánh chất lượng mới'
+            : '[CinesVerse] Liên hệ mới từ ' . $this->submission->name;
 
         return $this->subject($subject)
             ->view('emails.contact.submission-received', [
-                'submission' => $this->submission,
+                'submission'   => $this->submission,
+                'isAnonymous'  => $isAnonymous,
             ]);
     }
 }

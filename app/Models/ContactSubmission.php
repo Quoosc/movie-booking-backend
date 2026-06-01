@@ -19,6 +19,7 @@ class ContactSubmission extends Model
         'name',
         'email',
         'message',
+        'attachment_url',
         'source_page',
         'ip_address',
         'user_agent',

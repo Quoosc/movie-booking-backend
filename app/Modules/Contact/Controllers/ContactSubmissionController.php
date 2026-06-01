@@ -24,11 +24,12 @@ class ContactSubmissionController extends BaseController
     public function store(Request $request)
     {
         $data = $request->validate([
-            'name' => 'required|string|max:120',
-            'email' => 'required|string|email|max:190',
-            'message' => 'required|string|min:10|max:3000',
-            'sourcePage' => 'nullable|string|max:255',
-            'website' => 'nullable|string|max:0',
+            'name'          => 'nullable|string|max:120',
+            'email'         => 'nullable|string|email|max:190',
+            'message'       => 'required|string|min:10|max:10000',
+            'attachmentUrl' => 'nullable|string|url|max:500',
+            'sourcePage'    => 'nullable|string|max:255',
+            'website'       => 'nullable|string|max:0',
         ]);
 
         $result = $this->contactSubmissionService->submit([

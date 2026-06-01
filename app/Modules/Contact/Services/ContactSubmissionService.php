@@ -13,12 +13,13 @@ class ContactSubmissionService
     public function submit(array $data): array
     {
         $submission = ContactSubmission::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'message' => $data['message'],
-            'source_page' => $data['sourcePage'] ?? null,
-            'ip_address' => $data['ipAddress'] ?? null,
-            'user_agent' => $data['userAgent'] ?? null,
+            'name'           => $data['name'] ?? 'Ẩn danh',
+            'email'          => $data['email'] ?? 'anonymous@noreply.local',
+            'message'        => $data['message'],
+            'attachment_url' => $data['attachmentUrl'] ?? null,
+            'source_page'    => $data['sourcePage'] ?? null,
+            'ip_address'     => $data['ipAddress'] ?? null,
+            'user_agent'     => $data['userAgent'] ?? null,
         ]);
 
         $mailSent = false;
