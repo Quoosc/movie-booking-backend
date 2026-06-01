@@ -11,11 +11,13 @@ use App\Enums\BookingStatus;
 use App\Enums\PaymentStatus;
 use App\Enums\RefundStatus;
 use App\Enums\SeatStatus;
+use App\Mail\BookingConfirmedMail;
 use App\Modules\User\Services\UserService;
 use App\Shared\Services\RedisLockService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 class CheckoutLifecycleService
@@ -146,7 +148,9 @@ class CheckoutLifecycleService
      */
     public function handleSuccessfulPayment(Payment $payment, ?float $gatewayAmount, ?string $gatewayTxnId): Payment
     {
-        return DB::transaction(function () use ($payment, $gatewayAmount, $gatewayTxnId) {
+        $bookingToMail = null;
+
+        $payment = DB::transaction(function () use ($payment, $gatewayAmount, $gatewayTxnId, &$bookingToMail) {
             /** @var Booking $booking */
             $booking = $payment->booking;
 
@@ -168,7 +172,6 @@ class CheckoutLifecycleService
                 $gatewayAmount !== null && $expectedGatewayAmount !== null
                 && abs((float) $expectedGatewayAmount - (float) $gatewayAmount) > 0.01
             ) {
-
                 $currency = $this->resolveGatewayCurrency($payment);
                 Log::error("Gateway amount mismatch for payment {$payment->id}. Expected {$expectedGatewayAmount} {$currency}, got {$gatewayAmount} {$currency}");
                 return $this->handleFailedPayment($payment, 'Gateway amount mismatch');
@@ -187,6 +190,7 @@ class CheckoutLifecycleService
                 $booking->status = BookingStatus::CONFIRMED;
                 $booking->qr_payload = $this->generateQrPayload($booking);
                 $bookingChanged = true;
+                $bookingToMail = $booking;
             }
 
             if (!$booking->loyalty_points_awarded) {
@@ -202,6 +206,13 @@ class CheckoutLifecycleService
             // mark promotion usage (already attached at booking time) - no-op here
             return $payment;
         });
+
+        // Gửi mail SAU khi transaction commit, tránh giữ DB connection trong lúc SMTP kết nối
+        if ($bookingToMail) {
+            $this->sendBookingConfirmedMail($bookingToMail);
+        }
+
+        return $payment;
     }
 
     public function handleFailedPayment(Payment $payment, string $reason): Payment
@@ -263,7 +274,9 @@ class CheckoutLifecycleService
      */
     public function handleLatePayment(Payment $payment, ?float $gatewayAmount, ?string $gatewayTxnId): Payment
     {
-        return DB::transaction(function () use ($payment, $gatewayAmount, $gatewayTxnId) {
+        $bookingToMail = null;
+
+        $payment = DB::transaction(function () use ($payment, $gatewayAmount, $gatewayTxnId, &$bookingToMail) {
             $booking = $payment->booking;
 
             $expectedGatewayAmount = $this->resolveGatewayAmount($payment);
@@ -271,7 +284,6 @@ class CheckoutLifecycleService
                 $gatewayAmount !== null && $expectedGatewayAmount !== null
                 && abs((float) $expectedGatewayAmount - (float) $gatewayAmount) > 0.01
             ) {
-
                 $currency = $this->resolveGatewayCurrency($payment);
                 Log::error("Gateway amount mismatch for late payment. Booking {$booking->id}, Expected {$expectedGatewayAmount} {$currency}, got {$gatewayAmount} {$currency}");
                 return $this->handleFailedPayment($payment, 'Gateway amount mismatch - payment received after expiry');
@@ -307,6 +319,8 @@ class CheckoutLifecycleService
                 }
                 $payment->save();
 
+                $bookingToMail = $booking;
+
                 Log::info("Successfully processed late payment for booking {$booking->id}");
                 return $payment;
             }
@@ -332,6 +346,13 @@ class CheckoutLifecycleService
 
             return $payment;
         });
+
+        // Gửi mail SAU khi transaction commit
+        if ($bookingToMail) {
+            $this->sendBookingConfirmedMail($bookingToMail);
+        }
+
+        return $payment;
     }
 
     protected function releaseSeats(Booking $booking): void
@@ -444,5 +465,24 @@ class CheckoutLifecycleService
         }
 
         return config('currency.base_currency', 'VND');
+    }
+
+    protected function sendBookingConfirmedMail(Booking $booking): void
+    {
+        $email = $booking->user?->email;
+
+        if (!$email || str_ends_with($email, '@noreply.local')) {
+            return;
+        }
+
+        try {
+            Mail::to($email)->send(new BookingConfirmedMail($booking));
+            Log::info("Booking confirmation email sent for booking {$booking->booking_id} to {$email}");
+        } catch (\Throwable $e) {
+            Log::error("Failed to send booking confirmation email for booking {$booking->booking_id}", [
+                'email'     => $email,
+                'exception' => $e->getMessage(),
+            ]);
+        }
     }
 }
