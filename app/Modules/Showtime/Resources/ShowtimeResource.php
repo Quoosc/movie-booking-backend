@@ -13,11 +13,11 @@ class ShowtimeResource extends JsonResource
     {
         return [
             'showtimeId' => $this->showtime_id,
-            'room' => new RoomResource($this->whenLoaded('room')),
-            'movie' => new MovieResource($this->whenLoaded('movie')),
-            'format' => $this->format,
-            // Trả ISO string giống Spring
-            'startTime' => optional($this->start_time)->toISOString(),
+            'room'       => new RoomResource($this->whenLoaded('room')),
+            'movie'      => new MovieResource($this->whenLoaded('movie')),
+            'format'     => $this->format,
+            'startTime'  => optional($this->start_time)->toISOString(),
+            'isActive'   => (bool) $this->is_active,
         ];
     }
 }

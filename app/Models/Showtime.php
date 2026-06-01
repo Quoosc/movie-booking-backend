@@ -20,10 +20,12 @@ class Showtime extends Model
         'room_id',
         'format',
         'start_time',
+        'is_active',
     ];
 
     protected $casts = [
         'start_time' => 'datetime',
+        'is_active'  => 'boolean',
     ];
 
     protected static function boot()

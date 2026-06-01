@@ -27,5 +27,6 @@ Route::middleware('auth.jwt')->group(function () {
         Route::post('/', [ShowtimeController::class, 'store']);
         Route::put('/{showtimeId}', [ShowtimeController::class, 'update']);
         Route::delete('/{showtimeId}', [ShowtimeController::class, 'destroy']);
+        Route::patch('/{showtimeId}/toggle-active', [ShowtimeController::class, 'toggleActive']);
     });
 });

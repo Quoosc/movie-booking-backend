@@ -196,6 +196,21 @@ class ShowtimeController extends BaseController
 
 
     // =================================================================
+    //  ADMIN – PATCH /showtimes/{showtimeId}/toggle-active
+    // =================================================================
+    public function toggleActive(string $showtimeId)
+    {
+        $showtime = Showtime::findOrFail($showtimeId);
+        $showtime->is_active = !$showtime->is_active;
+        $showtime->save();
+        $showtime->load(['room', 'movie']);
+
+        $status = $showtime->is_active ? 'activated' : 'deactivated';
+
+        return $this->respond(new ShowtimeResource($showtime), "Showtime {$status}");
+    }
+
+    // =================================================================
     //  ADMIN – DELETE /showtimes/{showtimeId}
     // =================================================================
     public function destroy(string $showtimeId)
@@ -264,7 +279,7 @@ class ShowtimeController extends BaseController
         );
     }
 
-    // PUBLIC – GET /showtimes
+    // PUBLIC – GET /showtimes  (admin dùng — trả tất cả kể cả inactive)
     public function index()
     {
         $showtimes = Showtime::with(['room', 'movie'])
@@ -284,6 +299,7 @@ class ShowtimeController extends BaseController
 
         $showtimes = Showtime::with(['room', 'movie'])
             ->where('movie_id', $movieId)
+            ->where('is_active', true)
             ->orderBy('start_time')
             ->get();
 
@@ -302,6 +318,7 @@ class ShowtimeController extends BaseController
 
         $showtimes = Showtime::with(['room', 'movie'])
             ->where('movie_id', $movieId)
+            ->where('is_active', true)
             ->where('start_time', '>=', $now)
             ->orderBy('start_time')
             ->get();
@@ -343,6 +360,7 @@ class ShowtimeController extends BaseController
 
         $showtimes = Showtime::with(['room', 'movie'])
             ->where('movie_id', $movieId)
+            ->where('is_active', true)
             ->whereBetween('start_time', [$startDate, $endDate])
             ->orderBy('start_time')
             ->get();
