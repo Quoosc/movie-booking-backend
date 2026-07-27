@@ -2,12 +2,9 @@
 
 namespace App\Modules\User\Controllers;
 
-// app/Http/Controllers/AuthController.php
-
 use App\Core\Http\Controllers\BaseController;
-
-use App\Models\User;
 use App\Models\MembershipTier;
+use App\Models\User;
 use App\Shared\Services\TokenService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -15,217 +12,178 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends BaseController
 {
-    protected TokenService $tokenService;
-
-    public function __construct(TokenService $tokenService)
+    public function __construct(protected TokenService $tokenService)
     {
-        $this->tokenService = $tokenService;
     }
 
     protected function respond($data = null, string $message = 'OK', int $code = 200)
     {
         return response()->json([
-            'code'    => $code,
+            'code' => $code,
             'message' => $message,
-            'data'    => $data,
+            'data' => $data,
         ], $code);
     }
 
-    // ========== REGISTER ==========
+    private function refreshTokenCookie(string $token)
+    {
+        return cookie(
+            'refresh_token',
+            $token,
+            (int) config('jwt.refresh_ttl', 60 * 24 * 30),
+            '/',
+            null,
+            (bool) (config('session.secure') ?? app()->environment('production')),
+            true,
+            false,
+            (string) config('session.same_site', 'lax')
+        );
+    }
 
     public function register(Request $request)
-{
-    $data = $request->validate([
-        'username'        => 'required|string|max:255',
-        'email'           => 'required|email',
-        'phoneNumber'     => 'nullable|string|max:30',
-        'password'        => 'required|string|min:6',
-        'confirmPassword' => 'required|string|same:password',
-    ]);
-
-    $existing = User::where('email', $data['email'])->first();
-    if ($existing && strtoupper((string) $existing->role) !== 'GUEST') {
-        throw ValidationException::withMessages([
-            'email' => ['Email already exists'],
+    {
+        $data = $request->validate([
+            'username' => 'required|string|max:255',
+            'email' => 'required|email',
+            'phoneNumber' => 'nullable|string|max:30',
+            'password' => 'required|string|min:6',
+            'confirmPassword' => 'required|string|same:password',
         ]);
-    }
 
-    $defaultTier = MembershipTier::where('is_active', true)
-        ->orderBy('min_points')
-        ->first();
-
-    if ($existing) {
-        $existing->username = $data['username'];
-        $existing->phoneNumber = $data['phoneNumber'] ?? $existing->phoneNumber;
-        $existing->password = Hash::make($data['password']);
-        $existing->provider = 'LOCAL';
-        $existing->role = 'USER';
-        if (!$existing->membership_tier_id) {
-            $existing->membership_tier_id = $defaultTier?->membership_tier_id;
+        $existing = User::where('email', $data['email'])->first();
+        if ($existing && strtoupper((string) $existing->role) !== 'GUEST') {
+            throw ValidationException::withMessages([
+                'email' => ['Email already exists'],
+            ]);
         }
-        $existing->save();
-        $user = $existing;
-    } else {
-        $user = User::create([
-            'username'            => $data['username'],
-            'email'               => $data['email'],
-            'phoneNumber'         => $data['phoneNumber'] ?? null,
-            'password'            => Hash::make($data['password']),
-            'provider'            => 'LOCAL',
-            'role'                => 'USER',
-            'avatar_url'          => null,
-            'avatar_cloudinary_id' => null,
-            'loyalty_points'      => 0,
-            'membership_tier_id'  => $defaultTier?->membership_tier_id,
-        ]);
+
+        $defaultTier = MembershipTier::where('is_active', true)
+            ->orderBy('min_points')
+            ->first();
+
+        if ($existing) {
+            $existing->username = $data['username'];
+            $existing->phoneNumber = $data['phoneNumber'] ?? $existing->phoneNumber;
+            $existing->password = Hash::make($data['password']);
+            $existing->provider = 'LOCAL';
+            $existing->role = 'USER';
+            if (!$existing->membership_tier_id) {
+                $existing->membership_tier_id = $defaultTier?->membership_tier_id;
+            }
+            $existing->save();
+            $user = $existing;
+        } else {
+            $user = User::create([
+                'username' => $data['username'],
+                'email' => $data['email'],
+                'phoneNumber' => $data['phoneNumber'] ?? null,
+                'password' => Hash::make($data['password']),
+                'provider' => 'LOCAL',
+                'role' => 'USER',
+                'avatar_url' => null,
+                'avatar_cloudinary_id' => null,
+                'loyalty_points' => 0,
+                'membership_tier_id' => $defaultTier?->membership_tier_id,
+            ]);
+        }
+
+        $accessToken = $this->tokenService->generateAccessToken($user);
+        $refreshToken = $this->tokenService->generateRefreshToken($user);
+
+        return $this->respond([
+            'user' => $user,
+            'accessToken' => $accessToken,
+            'refreshToken' => $refreshToken->token,
+        ])->withCookie($this->refreshTokenCookie($refreshToken->token));
     }
-
-    $accessToken  = $this->tokenService->generateAccessToken($user);
-    $refreshModel = $this->tokenService->generateRefreshToken($user);
-
-    // Spec của bạn trả code = 200, mình thống nhất luôn cho giống
-    return $this->respond([
-        'user'         => $user,
-        'accessToken'  => $accessToken,
-        'refreshToken' => $refreshModel->token,
-    ], 'OK', 200);
-}
-
-    // ========== LOGIN ==========
 
     public function login(Request $request)
     {
         $data = $request->validate([
-            'email'    => 'required|email',
+            'email' => 'required|email',
             'password' => 'required|string',
         ]);
 
         /** @var User|null $user */
         $user = User::where('email', $data['email'])->first();
-
-        if (!$user || !Hash::check($data['password'], $user->password)) {
+        if (!$user || !$user->password || !Hash::check($data['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['Invalid email or password'],
             ]);
         }
 
-        $accessToken  = $this->tokenService->generateAccessToken($user);
-        $refreshModel = $this->tokenService->generateRefreshToken($user);
+        $accessToken = $this->tokenService->generateAccessToken($user);
+        $refreshToken = $this->tokenService->generateRefreshToken($user);
 
         return $this->respond([
-            'user'          => $user,
-            'accessToken'   => $accessToken,
-            'refreshToken'  => $refreshModel->token,
-        ], 'Login success');
+            'user' => $user,
+            'accessToken' => $accessToken,
+            'refreshToken' => $refreshToken->token,
+        ], 'Login success')->withCookie($this->refreshTokenCookie($refreshToken->token));
     }
 
-    // ========== REFRESH ==========
+    public function refresh(Request $request)
+    {
+        $token = $request->cookie('refresh_token')
+            ?? $request->input('refreshToken')
+            ?? $request->input('refresh_token');
 
-public function refresh(Request $request)
-{
-    // Ưu tiên giống BE Spring Boot: đọc từ cookie "refresh_token"
-    $token = $request->cookie('refresh_token');
+        if (!$token) {
+            return $this->respond(null, 'Missing refresh token', 400);
+        }
 
-    // Cho phép gửi trong body JSON / query để test Postman
-    if (!$token) {
-        $token = $request->input('refreshToken');
-    }
+        $user = $this->tokenService->getUserFromRefreshToken($token);
+        if (!$user) {
+            return $this->respond(null, 'Invalid or expired refresh token', 401);
+        }
 
-    if (!$token) {
-        return $this->respond(null, 'Missing refresh token', 400);
-    }
-
-    $user = $this->tokenService->getUserFromRefreshToken($token);
-
-    if (!$user) {
-        return $this->respond(null, 'Invalid refresh token', 401);
-    }
-
-    // Rotate: revoke token cũ và tạo token mới
-    $this->tokenService->revokeRefreshToken($token);
-    $newAccess  = $this->tokenService->generateAccessToken($user);
-    $newRefresh = $this->tokenService->generateRefreshToken($user);
-
-    // Gắn lại cookie refresh_token (giống Spring Boot dùng cookie)
-    $cookie = cookie(
-        'refresh_token',
-        $newRefresh->token,
-        60 * 24 * 30,   // 30 ngày (phút)
-        '/',
-        null,
-        false,          // local: false; lên production nhớ bật true + HTTPS
-        true,           // httpOnly
-        false,
-        'lax'
-    );
-
-    return $this->respond([
-        'accessToken'  => $newAccess,
-        'refreshToken' => $newRefresh->token,
-    ], 'OK', 200)->withCookie($cookie);
-}
-
-    // ========== LOGOUT ==========
-
-public function logout(Request $request)
-{
-    $token = $request->cookie('refresh_token')
-        ?? $request->input('refreshToken'); // cho phép body nếu muốn
-
-    if ($token) {
         $this->tokenService->revokeRefreshToken($token);
+        $newAccessToken = $this->tokenService->generateAccessToken($user);
+        $newRefreshToken = $this->tokenService->generateRefreshToken($user);
+
+        return $this->respond([
+            'accessToken' => $newAccessToken,
+            'refreshToken' => $newRefreshToken->token,
+        ])->withCookie($this->refreshTokenCookie($newRefreshToken->token));
     }
 
-    $forgetAccess = cookie('access_token', '', -1, '/');
-    $forgetRefreshApi = cookie('refresh_token', '', -1, '/api/auth');
-    $forgetRefreshAuth = cookie('refresh_token', '', -1, '/auth');
-    $forgetRefreshRoot = cookie('refresh_token', '', -1, '/');
+    public function logout(Request $request)
+    {
+        $token = $request->cookie('refresh_token')
+            ?? $request->input('refreshToken')
+            ?? $request->input('refresh_token');
 
-    if ($request->hasSession()) {
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        if ($token) {
+            $this->tokenService->revokeRefreshToken($token);
+        }
+
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
+        return $this->forgetAuthCookies($this->respond(null));
     }
-
-    return $this->respond(null, 'OK', 200)
-        ->withCookie($forgetAccess)
-        ->withCookie($forgetRefreshApi)
-        ->withCookie($forgetRefreshAuth)
-        ->withCookie($forgetRefreshRoot);
-}
-
-     // ========== LOGOUT ALL (mọi session của 1 email) ==========
 
     public function logoutAll(Request $request)
     {
-        // Email có thể gửi qua query (?email=...) hoặc body để test cho dễ
-        $email = $request->query('email') ?? $request->input('email');
-
-        if (!$email) {
-            return $this->respond(null, 'Email is required', 400);
-        }
-
         /** @var User|null $user */
-        $user = User::where('email', $email)->first();
-
+        $user = $request->user();
         if (!$user) {
-            return $this->respond(null, 'User not found', 404);
+            return $this->respond(null, 'Unauthenticated', 401);
         }
 
-        // Revoke toàn bộ refresh token của user đó
-        $this->tokenService->revokeAllTokensForUser($user);
+        $this->tokenService->revokeAllTokensForUser($user->user_id);
 
-        $forgetAccess = cookie('access_token', '', -1, '/');
-        $forgetRefreshApi = cookie('refresh_token', '', -1, '/api/auth');
-        $forgetRefreshAuth = cookie('refresh_token', '', -1, '/auth');
-        $forgetRefreshRoot = cookie('refresh_token', '', -1, '/');
-
-        // Trả đúng format spec: data là 1 object rỗng {}
-        return $this->respond((object) [], 'OK', 200)
-            ->withCookie($forgetAccess)
-            ->withCookie($forgetRefreshApi)
-            ->withCookie($forgetRefreshAuth)
-            ->withCookie($forgetRefreshRoot);
+        return $this->forgetAuthCookies($this->respond((object) []));
     }
 
-
+    private function forgetAuthCookies($response)
+    {
+        return $response
+            ->withCookie(cookie('access_token', '', -1, '/'))
+            ->withCookie(cookie('refresh_token', '', -1, '/api/auth'))
+            ->withCookie(cookie('refresh_token', '', -1, '/auth'))
+            ->withCookie(cookie('refresh_token', '', -1, '/'));
+    }
 }

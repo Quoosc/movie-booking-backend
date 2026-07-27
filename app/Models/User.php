@@ -65,6 +65,16 @@ class User extends Authenticatable
         return $this->hasMany(RefreshToken::class, 'user_id', 'user_id');
     }
 
+    public function bookings()
+    {
+        return $this->hasMany(Booking::class, 'user_id', 'user_id');
+    }
+
+    public function loyaltyTransactions()
+    {
+        return $this->hasMany(LoyaltyTransaction::class, 'user_id', 'user_id');
+    }
+
     /**
      * Check if user has specific role (for RBAC middleware)
      */

@@ -95,6 +95,13 @@ class TokenService
             return null;
         }
 
+        $refreshTtl = (int) config('jwt.refresh_ttl', 60 * 24 * 30);
+        if (!$record->created_at || $record->created_at->lt(now()->subMinutes($refreshTtl))) {
+            $record->revoked_at = now();
+            $record->save();
+            return null;
+        }
+
         return $record->user;
     }
 

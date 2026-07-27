@@ -13,7 +13,7 @@ use App\Enums\RefundStatus;
 use App\Enums\SeatStatus;
 use App\Mail\BookingConfirmedMail;
 use App\Modules\User\Services\UserService;
-use App\Shared\Services\RedisLockService;
+use App\Notifications\BookingConfirmed;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -23,12 +23,8 @@ use Illuminate\Support\Str;
 class CheckoutLifecycleService
 {
     public function __construct(
-        protected Booking     $bookingModel,
-        protected Payment     $paymentModel,
         protected ShowtimeSeat $showtimeSeatModel,
         protected UserService $userService,
-        protected PayPalService $paypalService,
-        protected MomoService $momoService,
     ) {}
 
     // Lazy load RefundService để tránh circular dependency
@@ -37,107 +33,14 @@ class CheckoutLifecycleService
         return app(RefundService::class);
     }
 
-    protected function bookingPromotionModel(): \App\Models\BookingPromotion
-    {
-        return app(\App\Models\BookingPromotion::class);
-    }
-
     /**
      * POST /checkout
      * Atomically validates seat locks, creates pending booking, and initiates payment
      */
     public function checkout(array $data, \App\DTO\SessionContext $sessionContext): array
     {
-        return DB::transaction(function () use ($data, $sessionContext) {
-            $lockId = $data['lockId'];
-            $paymentMethod = $data['paymentMethod'];
-            $promotionCode = $data['promotionCode'] ?? null;
-            $snackCombos = $data['snackCombos'] ?? [];
-            $guestInfo = $data['guestInfo'] ?? null;
-
-            // 1. Validate lock
-            $lockData = app(RedisLockService::class)->getLockData($lockId);
-            if (!$lockData) {
-                throw new \App\Exceptions\CustomException('Lock not found or expired', 404);
-            }
-
-            // 2. Create/get user
-            $user = null;
-            if ($sessionContext->isAuthenticated()) {
-                $user = \App\Models\User::find($sessionContext->getUserId());
-            } elseif ($guestInfo) {
-                $user = $this->createGuestUser($guestInfo);
-            }
-
-            if (!$user) {
-                throw new \App\Exceptions\CustomException('User information required', 400);
-            }
-
-            // 3. Create booking
-            $booking = $this->createBookingFromLock($lockData, $user->user_id, $promotionCode, $snackCombos);
-
-            // 4. Initiate payment
-            $paymentResult = $this->initiatePayment($booking, $paymentMethod);
-
-            // 5. Release lock
-            $showtimeId = $lockData['showtimeId'];
-            $seatIds = $lockData['seatIds'] ?? [];
-            if (!empty($seatIds)) {
-                $lockToken = $lockData['lockToken'] ?? $lockId;
-                app(RedisLockService::class)->releaseMultipleSeatsLock($showtimeId, $seatIds, $lockToken);
-            }
-
-            return [
-                'bookingId' => $booking->booking_id,
-                'paymentId' => $paymentResult['paymentId'],
-                'paymentMethod' => $paymentMethod,
-                'redirectUrl' => $paymentResult['redirectUrl'],
-                'message' => 'Booking confirmed and payment initiated'
-            ];
-        });
-    }
-
-    private function getLockDataFromRedis(string $lockId): ?array
-    {
-        return app(RedisLockService::class)->getLockData($lockId);
-    }
-
-    private function createGuestUser(array $guestInfo)
-    {
-        $existing = \App\Models\User::where('email', $guestInfo['email'])->first();
-        if ($existing) {
-            return $existing;
-        }
-
-        $user = new \App\Models\User();
-        $user->user_id = \Illuminate\Support\Str::uuid()->toString();
-        $user->username = $guestInfo['fullName'] ?? $guestInfo['username'] ?? $guestInfo['email'];
-        $user->email = $guestInfo['email'];
-        $user->phoneNumber = $guestInfo['phoneNumber'] ?? null;
-        $user->role = 'GUEST';
-        $user->provider = null;
-        $user->password = null;
-        $user->save();
-        return $user;
-    }
-
-    private function createBookingFromLock(array $lockData, string $userId, ?string $promotionCode, array $snackCombos)
-    {
-        // Placeholder - cần implement đầy đủ
-        throw new \App\Exceptions\CustomException(
-            'createBookingFromLock() needs full implementation',
-            501
-        );
-    }
-
-    private function initiatePayment(Booking $booking, string $paymentMethod): array
-    {
-        // Placeholder - trả về mock data
-        // Trong thực tế cần gọi PayPal/Momo service
-        return [
-            'paymentId' => \Illuminate\Support\Str::uuid()->toString(),
-            'redirectUrl' => 'https://payment-gateway.example.com/pay?token=xxx'
-        ];
+        return app(\App\Modules\Booking\Services\CheckoutService::class)
+            ->confirmBookingAndInitiatePayment($data, $sessionContext);
     }
 
     /**
@@ -194,7 +97,13 @@ class CheckoutLifecycleService
             }
 
             if (!$booking->loyalty_points_awarded) {
-                $this->userService->addLoyaltyPoints($booking->user_id, (float) $booking->final_price);
+                $this->userService->addLoyaltyPoints(
+                    $booking->user_id,
+                    (float) $booking->final_price,
+                    'BOOKING',
+                    $booking->booking_id,
+                    'Tích điểm từ đơn đặt vé'
+                );
                 $booking->loyalty_points_awarded = true;
                 $bookingChanged = true;
             }
@@ -210,6 +119,7 @@ class CheckoutLifecycleService
         // Gửi mail SAU khi transaction commit, tránh giữ DB connection trong lúc SMTP kết nối
         if ($bookingToMail) {
             $this->sendBookingConfirmedMail($bookingToMail);
+            $this->sendBookingConfirmedNotification($bookingToMail);
         }
 
         return $payment;
@@ -306,7 +216,13 @@ class CheckoutLifecycleService
                 $booking->payment_expires_at = null;
 
                 if (!$booking->loyalty_points_awarded) {
-                    $this->userService->addLoyaltyPoints($booking->user_id, (float) $booking->final_price);
+                    $this->userService->addLoyaltyPoints(
+                        $booking->user_id,
+                        (float) $booking->final_price,
+                        'BOOKING',
+                        $booking->booking_id,
+                        'Tích điểm từ đơn đặt vé'
+                    );
                     $booking->loyalty_points_awarded = true;
                 }
 
@@ -350,6 +266,7 @@ class CheckoutLifecycleService
         // Gửi mail SAU khi transaction commit
         if ($bookingToMail) {
             $this->sendBookingConfirmedMail($bookingToMail);
+            $this->sendBookingConfirmedNotification($bookingToMail);
         }
 
         return $payment;
@@ -383,13 +300,6 @@ class CheckoutLifecycleService
         return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
     }
 
-    protected function clearPromotionUsage(Booking $booking): void
-    {
-        // Usage counts rely on booking status; just ensure any promotion entries remain but booking status is set appropriately.
-        // Nothing to do here unless business wants deletion; keeping for parity counting via status filter.
-        return;
-    }
-
     public function handleRefundSuccess(Payment $payment, Refund $refund, string $gatewayTxnId): void
     {
         DB::transaction(function () use ($payment, $refund, $gatewayTxnId) {
@@ -398,7 +308,13 @@ class CheckoutLifecycleService
             $this->releaseSeats($booking);
 
             if ($booking->loyalty_points_awarded) {
-                $this->userService->revokeLoyaltyPoints($booking->user_id, (float) $booking->final_price);
+                $this->userService->revokeLoyaltyPoints(
+                    $booking->user_id,
+                    (float) $booking->final_price,
+                    'BOOKING_REFUND',
+                    $booking->booking_id,
+                    'Thu hồi điểm do hoàn vé'
+                );
                 $booking->loyalty_points_awarded = false;
             }
 
@@ -481,6 +397,17 @@ class CheckoutLifecycleService
         } catch (\Throwable $e) {
             Log::error("Failed to send booking confirmation email for booking {$booking->booking_id}", [
                 'email'     => $email,
+                'exception' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    protected function sendBookingConfirmedNotification(Booking $booking): void
+    {
+        try {
+            $booking->user?->notify(new BookingConfirmed($booking));
+        } catch (\Throwable $e) {
+            Log::error("Failed to create booking notification for {$booking->booking_id}", [
                 'exception' => $e->getMessage(),
             ]);
         }

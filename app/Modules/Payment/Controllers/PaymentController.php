@@ -4,7 +4,6 @@ namespace App\Modules\Payment\Controllers;
 
 use App\Core\Http\Controllers\BaseController;
 
-use App\Modules\Payment\Services\CheckoutLifecycleService;
 use App\Modules\Payment\Services\MomoService;
 use App\Modules\Payment\Services\PayPalService;
 use App\Modules\Payment\Repositories\PaymentRepository;
@@ -15,7 +14,6 @@ use Illuminate\Http\JsonResponse;
 class PaymentController extends BaseController
 {
     public function __construct(
-        protected CheckoutLifecycleService $lifecycleService,
         protected MomoService $momoService,
         protected PayPalService $paypalService,
         protected PaymentRepository $paymentRepo
@@ -75,10 +73,23 @@ class PaymentController extends BaseController
             return response()->json($response->toArray());
         }
 
-        // Momo auto-captures via IPN
-        return response()->json([
-            'message' => 'Momo payments are captured automatically via IPN',
-        ], 400);
+        // MoMo is captured by its signed IPN. This legacy endpoint only reads
+        // the persisted state; it never trusts browser callback parameters.
+        return response()->json($this->momoService->verifyPayment($data['transactionId']));
+    }
+
+    /**
+     * GET /api/payments/order/status
+     * Read MoMo state while the browser waits for the signed IPN callback.
+     */
+    public function paymentStatus(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'transactionId' => 'required|string|max:255',
+            'paymentMethod' => 'required|in:MOMO',
+        ]);
+
+        return response()->json($this->momoService->verifyPayment($data['transactionId']));
     }
 
     /**

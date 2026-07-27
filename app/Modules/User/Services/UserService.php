@@ -5,6 +5,8 @@ namespace App\Modules\User\Services;
 use App\Models\User;
 use App\Models\Booking;
 use App\Models\RefreshToken;
+use App\Models\LoyaltyTransaction;
+use App\Notifications\LoyaltyPointsChanged;
 use App\Modules\Membership\Services\MembershipTierService;
 use App\Exceptions\EntityDeletionForbiddenException;
 use Illuminate\Support\Facades\Auth;
@@ -65,33 +67,88 @@ class UserService
      * Cộng điểm loyalty cho user.
      * Rule: 1 điểm / 1000 VND.
      */
-    public function addLoyaltyPoints(string $userId, float $amountSpent): void
+    public function addLoyaltyPoints(
+        string $userId,
+        float $amountSpent,
+        ?string $sourceType = null,
+        ?string $sourceId = null,
+        ?string $description = null,
+    ): void
     {
-        DB::transaction(function () use ($userId, $amountSpent) {
-            $user = $this->findUserById($userId);
-
+        DB::transaction(function () use ($userId, $amountSpent, $sourceType, $sourceId, $description) {
+            $user = User::whereKey($userId)->lockForUpdate()->firstOrFail();
             $pointsToAdd = (int) floor($amountSpent / 1000.0);
+            if ($pointsToAdd <= 0) return;
+            $previousTierId = $user->membership_tier_id;
             $user->loyalty_points = ($user->loyalty_points ?? 0) + $pointsToAdd;
 
             $this->updateUserTier($user);
             $user->save();
+
+            LoyaltyTransaction::create([
+                'user_id' => $user->user_id,
+                'type' => 'EARN',
+                'points' => $pointsToAdd,
+                'balance_after' => $user->loyalty_points,
+                'source_type' => $sourceType,
+                'source_id' => $sourceId,
+                'description' => $description ?: 'Tích điểm từ giao dịch',
+            ]);
+
+            $newTier = $previousTierId !== $user->membership_tier_id
+                ? $user->membershipTier()->value('name')
+                : null;
+            $user->notify(new LoyaltyPointsChanged(
+                $pointsToAdd,
+                (int) $user->loyalty_points,
+                $description ?: 'Tích điểm từ giao dịch',
+                $newTier,
+            ));
         });
     }
 
     /**
      * Trừ điểm loyalty (khi refund, hủy vé).
      */
-    public function revokeLoyaltyPoints(string $userId, float $amount): void
+    public function revokeLoyaltyPoints(
+        string $userId,
+        float $amount,
+        ?string $sourceType = null,
+        ?string $sourceId = null,
+        ?string $description = null,
+    ): void
     {
-        DB::transaction(function () use ($userId, $amount) {
-            $user = $this->findUserById($userId);
-
+        DB::transaction(function () use ($userId, $amount, $sourceType, $sourceId, $description) {
+            $user = User::whereKey($userId)->lockForUpdate()->firstOrFail();
             $pointsToRemove = (int) floor($amount / 1000.0);
-            $newPoints = max(0, ($user->loyalty_points ?? 0) - $pointsToRemove);
+            $actualPoints = min($pointsToRemove, (int) ($user->loyalty_points ?? 0));
+            if ($actualPoints <= 0) return;
+            $previousTierId = $user->membership_tier_id;
+            $newPoints = (int) $user->loyalty_points - $actualPoints;
             $user->loyalty_points = $newPoints;
 
             $this->updateUserTier($user);
             $user->save();
+
+            LoyaltyTransaction::create([
+                'user_id' => $user->user_id,
+                'type' => 'REVERSAL',
+                'points' => -$actualPoints,
+                'balance_after' => $user->loyalty_points,
+                'source_type' => $sourceType,
+                'source_id' => $sourceId,
+                'description' => $description ?: 'Hoàn tác điểm từ giao dịch',
+            ]);
+
+            $newTier = $previousTierId !== $user->membership_tier_id
+                ? $user->membershipTier()->value('name')
+                : null;
+            $user->notify(new LoyaltyPointsChanged(
+                -$actualPoints,
+                (int) $user->loyalty_points,
+                $description ?: 'Hoàn tác điểm từ giao dịch',
+                $newTier,
+            ));
         });
     }
 

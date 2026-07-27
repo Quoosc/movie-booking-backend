@@ -7,12 +7,19 @@ namespace App\Modules\User\Controllers;
 use App\Core\Http\Controllers\BaseController;
 
 use App\Models\User;
+use App\Models\LoyaltyTransaction;
+use App\Models\MembershipTier;
+use App\Shared\Services\TokenService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class UsersController extends BaseController
 {
+    public function __construct(protected TokenService $tokenService)
+    {
+    }
+
     protected function respond($data = null, string $message = 'OK', int $code = 200)
     {
         return response()->json([
@@ -110,6 +117,7 @@ class UsersController extends BaseController
 
         $user->password = Hash::make($data['newPassword']);
         $user->save();
+        $this->tokenService->revokeAllTokensForUser($user->user_id);
 
         return $this->respond(
             'Password updated successfully'
@@ -122,9 +130,70 @@ class UsersController extends BaseController
         /** @var User $user */
         $user = $request->user();
 
-        return $this->respond(
-            $this->mapUserToProfile($user)
-        );
+        $profile = $this->mapUserToProfile($user->load('membershipTier'));
+        $points = (int) ($user->loyalty_points ?? 0);
+        $currentMinimum = (int) ($user->membershipTier?->min_points ?? 0);
+        $nextTier = MembershipTier::where('is_active', true)
+            ->where('min_points', '>', $points)
+            ->orderBy('min_points')
+            ->first();
+
+        return $this->respond([
+            ...$profile,
+            'loyaltyOverview' => [
+                'currentPoints' => $points,
+                'nextTier' => $nextTier ? [
+                    'membershipTierId' => $nextTier->membership_tier_id,
+                    'name' => $nextTier->name,
+                    'minPoints' => $nextTier->min_points,
+                    'pointsNeeded' => max(0, $nextTier->min_points - $points),
+                ] : null,
+                'progressPercent' => $nextTier
+                    ? min(100, round((($points - $currentMinimum) / max(1, $nextTier->min_points - $currentMinimum)) * 100, 1))
+                    : 100,
+            ],
+        ]);
+    }
+
+    // GET /users/loyalty/transactions
+    public function getLoyaltyTransactions(Request $request)
+    {
+        $data = $request->validate([
+            'page' => 'sometimes|integer|min:1',
+            'perPage' => 'sometimes|integer|min:1|max:50',
+            'type' => 'sometimes|in:EARN,REVERSAL,REDEEM,ADJUSTMENT,OPENING_BALANCE',
+        ]);
+        $query = LoyaltyTransaction::where('user_id', $request->user()->user_id);
+        if (isset($data['type'])) $query->where('type', $data['type']);
+
+        $summaryQuery = LoyaltyTransaction::where('user_id', $request->user()->user_id);
+        $earned = (clone $summaryQuery)->where('points', '>', 0)->sum('points');
+        $spent = abs((int) (clone $summaryQuery)->where('points', '<', 0)->sum('points'));
+        $paginator = $query->latest()->paginate($data['perPage'] ?? 15);
+
+        return $this->respond([
+            'items' => collect($paginator->items())->map(fn (LoyaltyTransaction $transaction) => [
+                'transactionId' => $transaction->loyalty_transaction_id,
+                'type' => $transaction->type,
+                'points' => $transaction->points,
+                'balanceAfter' => $transaction->balance_after,
+                'sourceType' => $transaction->source_type,
+                'sourceId' => $transaction->source_id,
+                'description' => $transaction->description,
+                'expiresAt' => $transaction->expires_at?->toISOString(),
+                'createdAt' => $transaction->created_at?->toISOString(),
+            ]),
+            'summary' => [
+                'totalEarned' => (int) $earned,
+                'totalSpent' => $spent,
+                'currentBalance' => (int) ($request->user()->loyalty_points ?? 0),
+            ],
+            'pagination' => [
+                'currentPage' => $paginator->currentPage(),
+                'lastPage' => $paginator->lastPage(),
+                'total' => $paginator->total(),
+            ],
+        ]);
     }
 
     // GET /users/{userId} - Admin only

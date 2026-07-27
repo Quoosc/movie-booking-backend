@@ -161,7 +161,7 @@ class MomoService
                 Log::info("Momo payment created successfully for booking {$booking->booking_id}");
 
                 return new InitiatePaymentResponse(
-                    paymentId: $payment->id,
+                    paymentId: $payment->payment_id,
                     paypalOrderId: null,
                     momoOrderId: $orderId,
                     approvalUrl: $payUrl,

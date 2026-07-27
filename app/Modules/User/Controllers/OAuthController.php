@@ -69,9 +69,12 @@ class OAuthController extends BaseController
         $accessToken = $this->tokenService->generateAccessTokenWithClaims(
             $user,
             60,
-            ['ROLE_USER']
+            ['ROLE_'.strtoupper((string) $user->role)]
         );
         $refreshModel = $this->tokenService->generateRefreshToken($user);
+
+        $secureCookies = (bool) (config('session.secure') ?? app()->environment('production'));
+        $sameSite = (string) config('session.same_site', 'lax');
 
         $accessCookie = cookie(
             'access_token',
@@ -79,22 +82,22 @@ class OAuthController extends BaseController
             60,      // 1 hour
             '/',
             null,
-            false,   // local dev
+            $secureCookies,
             true,    // httpOnly
             false,
-            'strict'
+            $sameSite
         );
 
         $refreshCookie = cookie(
             'refresh_token',
             $refreshModel->token,
-            60 * 24 * 7, // 7 days
-            '/api/auth',
+            (int) config('jwt.refresh_ttl', 60 * 24 * 30),
+            '/',
             null,
-            false,
+            $secureCookies,
             true,
             false,
-            'strict'
+            $sameSite
         );
 
         return redirect($this->frontendRedirectUrl())
