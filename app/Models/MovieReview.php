@@ -19,12 +19,17 @@ class MovieReview extends Model
         'reviewer_name',
         'rating',
         'comment',
+        'is_spoiler',
+        'status',
+        'edited_at',
         'image_url',
         'video_url',
     ];
 
     protected $casts = [
         'rating' => 'integer',
+        'is_spoiler' => 'boolean',
+        'edited_at' => 'datetime',
     ];
 
     protected static function boot()
@@ -55,5 +60,21 @@ class MovieReview extends Model
     public function replies()
     {
         return $this->hasMany(MovieReview::class, 'parent_id', 'review_id');
+    }
+
+    public function reports()
+    {
+        return $this->hasMany(ReviewReport::class, 'review_id', 'review_id');
+    }
+
+    public function moderationLogs()
+    {
+        return $this->hasMany(ReviewModerationLog::class, 'review_id', 'review_id');
+    }
+
+    public function latestModerationLog()
+    {
+        return $this->hasOne(ReviewModerationLog::class, 'review_id', 'review_id')
+            ->latestOfMany('created_at');
     }
 }

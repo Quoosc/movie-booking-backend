@@ -5,7 +5,7 @@ use App\Modules\Movie\Controllers\MovieController;
 use App\Modules\Cinema\Controllers\SeatController;
 use App\Modules\Promotion\Controllers\PromotionController;
 
-Route::middleware('auth.jwt')->group(function () {
+Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
     Route::prefix('movies')->group(function () {
         Route::post('/', [MovieController::class, 'store']);
         Route::put('/{movieId}', [MovieController::class, 'update']);

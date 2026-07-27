@@ -152,23 +152,28 @@ POST /api/payments/order
 ### 3.5 Step 5: Capture Payment
 
 ```
-POST /api/payments/order/capture
+POST /api/payments/order/capture (PayPal)
   → PaymentController::capturePayment()
   → ConfirmPaymentRequest validate: { transactionId, paymentMethod }
   → CheckoutService::capturePayment():
     1. Query Payment by transaction_id
-    2. Switch method:
-       PAYPAL:
-         → PayPalService::captureOrder(orderId)
-         → Verify capture status = COMPLETED
-       MOMO:
-         → Verify IPN signature / resultCode
+    2. PayPalService::captureOrder(orderId)
+       → Verify capture status = COMPLETED
     3. Payment.status = COMPLETED, completed_at = now
     4. Booking.status = CONFIRMED
     5. ShowtimeSeat.seat_status = BOOKED (cho tất cả ghế)
     6. Award loyalty points (nếu user authenticated)
     7. Deactivate SeatLock
     8. Trả PaymentResponse
+
+MoMo không được capture từ dữ liệu redirect của trình duyệt:
+
+POST /api/payments/momo/ipn
+  → Verify HMAC signature + amount + orderId
+  → Cập nhật payment/booking idempotently
+
+GET /api/payments/order/status?transactionId=...&paymentMethod=MOMO
+  → FE chỉ đọc trạng thái đã được IPN xác thực
 ```
 
 ### 3.6 Refund

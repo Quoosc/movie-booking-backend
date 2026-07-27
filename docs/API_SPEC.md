@@ -32,16 +32,16 @@ Error response:
 |--------|----------|------|-------------------|---------|
 | POST | `/auth/register` | ❌ | `AuthController::register` | |
 | POST | `/auth/login` | ❌ | `AuthController::login` | |
-| POST | `/auth/logout` | ✅ | `AuthController::logout` | |
-| POST | `/auth/logout-all?email=` | ✅ | `AuthController::logoutAll` | Xóa tất cả refresh tokens |
-| GET | `/auth/refresh` | ✅ | `AuthController::refresh` | Trả accessToken mới |
+| POST | `/auth/logout` | Refresh token/cookie | `AuthController::logout` | Thu hồi phiên hiện tại |
+| POST | `/auth/logout-all` | ✅ JWT | `AuthController::logoutAll` | Chỉ xóa các phiên của current user |
+| POST | `/auth/refresh` | Refresh token/cookie | `AuthController::refresh` | Rotate refresh token và trả accessToken mới |
 
 ### Request/Response
 
 ```php
 // POST /auth/register
 Request: { email, username, phoneNumber, password, confirmPassword }
-Response: { success: true }
+Response: { code, data: { accessToken, refreshToken, user } }
 
 // POST /auth/login
 Request: { email, password }
@@ -87,7 +87,7 @@ status, language, createdAt, updatedAt
 | GET | `/cinemas/snacks?cinemaId=` | ❌ | `CinemaController::getSnacks` |
 | GET | `/cinemas/{cinemaId}/snacks` | ❌ | `CinemaController::getSnacksByCinema` |
 
-### Admin (auth.jwt)
+### Admin (auth.jwt + role:admin)
 
 | Method | Endpoint | Auth | Controller Method |
 |--------|----------|------|-------------------|
@@ -95,7 +95,7 @@ status, language, createdAt, updatedAt
 | PUT | `/cinemas/{cinemaId}` | ✅ | `CinemaController::update` |
 | DELETE | `/cinemas/{cinemaId}` | ✅ | `CinemaController::destroy` |
 
-### Rooms (auth.jwt)
+### Rooms (auth.jwt + role:admin)
 
 | Method | Endpoint | Auth | Controller Method |
 |--------|----------|------|-------------------|
@@ -105,7 +105,7 @@ status, language, createdAt, updatedAt
 | PUT | `/cinemas/rooms/{roomId}` | ✅ | `CinemaController::updateRoom` |
 | DELETE | `/cinemas/rooms/{roomId}` | ✅ | `CinemaController::destroyRoom` |
 
-### Snacks Admin (auth.jwt)
+### Snacks Admin (auth.jwt + role:admin)
 
 | Method | Endpoint | Auth | Controller Method |
 |--------|----------|------|-------------------|
@@ -130,7 +130,7 @@ status, language, createdAt, updatedAt
 | GET | `/showtimes/movie/{movieId}/date-range?startDate=&endDate=` | ❌ | `ShowtimeController::byMovieAndDateRange` |
 | GET | `/showtimes/room/{roomId}` | ❌ | `ShowtimeController::byRoom` |
 
-### Admin (auth.jwt)
+### Admin (auth.jwt + role:admin)
 
 | Method | Endpoint | Auth | Controller Method |
 |--------|----------|------|-------------------|
@@ -138,7 +138,7 @@ status, language, createdAt, updatedAt
 | PUT | `/showtimes/{showtimeId}` | ✅ | `ShowtimeController::update` |
 | DELETE | `/showtimes/{showtimeId}` | ✅ | `ShowtimeController::destroy` |
 
-### Showtime Ticket Types (auth.jwt)
+### Showtime Ticket Types (auth.jwt + role:admin)
 
 | Method | Endpoint | Auth | Controller Method |
 |--------|----------|------|-------------------|
@@ -158,7 +158,7 @@ status, language, createdAt, updatedAt
 |--------|----------|------|-------------------|
 | GET | `/seats/layout?showtime_id=` | ❌ | `SeatController::layout` |
 
-### Admin (auth.jwt)
+### Admin (auth.jwt + role:admin)
 
 | Method | Endpoint | Auth | Controller Method |
 |--------|----------|------|-------------------|
@@ -171,7 +171,7 @@ status, language, createdAt, updatedAt
 | POST | `/seats/generate` | ✅ | `SeatController::generate` |
 | GET | `/seats/row-labels?rows=` | ✅ | `SeatController::rowLabels` |
 
-### Showtime Seats (auth.jwt)
+### Showtime Seats (auth.jwt + role:admin)
 
 | Method | Endpoint | Auth | Controller Method |
 |--------|----------|------|-------------------|
@@ -208,7 +208,7 @@ status, language, createdAt, updatedAt
 | GET | `/promotions/code/{code}` | ❌ | `PromotionController::showByCode` |
 | GET | `/promotions/{promotionId}` | ❌ | `PromotionController::show` |
 
-### Admin (auth.jwt)
+### Admin (auth.jwt + role:admin)
 
 | Method | Endpoint | Auth | Controller Method |
 |--------|----------|------|-------------------|
@@ -292,6 +292,7 @@ status, language, createdAt, updatedAt
 |--------|----------|------|-------------------|---------|
 | POST | `/payments/order` | Guest/JWT | `PaymentController::initiatePayment` | Public |
 | POST | `/payments/order/capture` | Guest/JWT | `PaymentController::capturePayment` | Public |
+| GET | `/payments/order/status?transactionId=&paymentMethod=MOMO` | Guest/JWT | `PaymentController::paymentStatus` | Đọc trạng thái MoMo đã xác thực qua IPN |
 | GET | `/payments/momo/ipn` | ❌ | `PaymentController::handleMomoIpnGet` | Momo callback |
 | POST | `/payments/momo/ipn` | ❌ | `PaymentController::handleMomoIpnPost` | Momo IPN |
 | GET | `/payments/search?...` | ✅ JWT | `PaymentController::searchPayments` | query params |
