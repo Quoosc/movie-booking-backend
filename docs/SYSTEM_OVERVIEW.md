@@ -4,14 +4,15 @@
 
 | Layer | Technology | Version |
 |-------|-----------|---------|
-| Framework | Laravel | 11.x |
-| Language | PHP | 8.2+ |
+| Framework | Laravel | 12.x |
+| Language | PHP | 8.2+ (8.3 recommended) |
 | Database | MySQL | 8.0+ (Laragon) |
 | Authentication | JWT (custom) | firebase/php-jwt |
 | Payment Gateway | PayPal REST API | Sandbox mode |
 | Payment Gateway | Momo | Test endpoint |
 | OAuth2 | Google Login | socialite |
-| Cache/Queue | Database driver | (không dùng Redis) |
+| Seat locking | Redis | Distributed multi-seat locks |
+| Cache/Queue | Configurable | Database/Redis by environment |
 | Server | Laragon | Windows dev |
 
 ## 2. Kiến trúc hệ thống
@@ -71,8 +72,9 @@ Protected Request:
   → JwtAuthMiddleware decode JWT → set $request->user_id, $request->user_role
   → Controller xử lý
 
-Token Refresh → GET /api/auth/refresh
-  → Verify refreshToken → Tạo accessToken mới
+Token Refresh → POST /api/auth/refresh
+  → Đọc cookie HttpOnly hoặc refreshToken trong body
+  → Rotate refresh token → tạo accessToken mới
 ```
 
 ### 3.2 Middleware Stack
@@ -116,11 +118,14 @@ FE gọi: POST /api/payments/order
         → Trả paymentUrl (Momo redirect)
         → User approve → Momo IPN callback
 
-Capture: POST /api/payments/order/capture
+PayPal capture: POST /api/payments/order/capture
   → PaymentController::capturePayment()
-  → Tùy method:
-    ├── PAYPAL: PayPalService::captureOrder(orderId)
-    └── MOMO: Verify IPN data
+  → PayPalService::captureOrder(orderId)
+
+MoMo confirmation:
+  → MoMo gửi signed IPN tới /api/payments/momo/ipn
+  → Backend verify signature và cập nhật payment
+  → FE poll GET /api/payments/order/status bằng orderId
   → Cập nhật payment status → COMPLETED
   → Cập nhật booking status → CONFIRMED
   → Cập nhật showtime_seats → BOOKED

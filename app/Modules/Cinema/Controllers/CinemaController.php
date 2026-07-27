@@ -99,6 +99,8 @@ class CinemaController extends BaseController
         $data = $request->validate([
             'name'     => 'required|string|max:255',
             'address'  => 'required|string|max:255',
+            'city'     => 'nullable|string|max:120',
+            'district' => 'nullable|string|max:120',
             'hotline'  => 'required|string|max:30',
             'heroImageUrl' => 'nullable|string|max:2048',
             'heroImageCloudinaryId' => 'nullable|string|max:255',
@@ -109,6 +111,8 @@ class CinemaController extends BaseController
         $cinema->cinema_id = (string) Str::uuid();
         $cinema->name      = $data['name'];
         $cinema->address   = $data['address'];
+        $cinema->city      = $data['city'] ?? null;
+        $cinema->district  = $data['district'] ?? null;
         $cinema->hotline   = $data['hotline'];
         $cinema->hero_image_url = $data['heroImageUrl'] ?? null;
         $cinema->hero_image_cloudinary_id = $data['heroImageCloudinaryId'] ?? null;
@@ -129,6 +133,8 @@ class CinemaController extends BaseController
         $data = $request->validate([
             'name'     => 'sometimes|required|string|max:255',
             'address'  => 'sometimes|required|string|max:255',
+            'city'     => 'sometimes|nullable|string|max:120',
+            'district' => 'sometimes|nullable|string|max:120',
             'hotline'  => 'sometimes|required|string|max:30',
             'heroImageUrl' => 'sometimes|nullable|string|max:2048',
             'heroImageCloudinaryId' => 'sometimes|nullable|string|max:255',
@@ -137,6 +143,8 @@ class CinemaController extends BaseController
 
         if (array_key_exists('name', $data))     $cinema->name     = $data['name'];
         if (array_key_exists('address', $data))  $cinema->address  = $data['address'];
+        if (array_key_exists('city', $data))     $cinema->city     = $data['city'];
+        if (array_key_exists('district', $data)) $cinema->district = $data['district'];
         if (array_key_exists('hotline', $data))  $cinema->hotline  = $data['hotline'];
         if (array_key_exists('heroImageUrl', $data)) {
             $cinema->hero_image_url = $data['heroImageUrl'];

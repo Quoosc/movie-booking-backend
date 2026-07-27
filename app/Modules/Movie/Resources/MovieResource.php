@@ -8,6 +8,8 @@ class MovieResource extends JsonResource
 {
     public function toArray(mixed $request)
     {
+        $reviewCount = (int) ($this->reviews_count ?? 0);
+
         return [
             'movieId'             => $this->movie_id,
             'title'               => $this->title,
@@ -25,10 +27,10 @@ class MovieResource extends JsonResource
             'premiereDate'        => $this->premiere_date?->format('Y-m-d'),
             'createdAt'           => $this->created_at,
             'updatedAt'           => $this->updated_at,
-            'avgRating'           => $this->reviews_count > 0
+            'avgRating'           => $reviewCount > 0
                                         ? round((float)$this->reviews_avg_rating, 1)
-                                        : 10.0,
-            'reviewCount'         => (int)($this->reviews_count ?? 0),
+                                        : null,
+            'reviewCount'         => $reviewCount,
         ];
     }
 }

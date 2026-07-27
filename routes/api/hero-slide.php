@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('hero-slides')->group(function () {
     Route::get('/', [HeroSlideController::class, 'indexPublic']);
 
-    Route::middleware('auth.jwt')->group(function () {
+    Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
         Route::get('/admin', [HeroSlideController::class, 'indexAdmin']);
         Route::post('/', [HeroSlideController::class, 'store']);
         Route::put('/{heroSlideId}', [HeroSlideController::class, 'update']);

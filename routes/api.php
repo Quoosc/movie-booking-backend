@@ -16,3 +16,4 @@ require __DIR__ . '/api/pricing.php';
 require __DIR__ . '/api/admin.php';
 require __DIR__ . '/api/misc.php';
 require __DIR__ . '/api/contact.php';
+require __DIR__ . '/api/notification.php';

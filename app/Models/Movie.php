@@ -57,6 +57,8 @@ class Movie extends Model
 
     public function reviews()
     {
-        return $this->hasMany(\App\Models\MovieReview::class, 'movie_id', 'movie_id');
+        return $this->hasMany(\App\Models\MovieReview::class, 'movie_id', 'movie_id')
+            ->whereNull('parent_id')
+            ->where('status', 'PUBLISHED');
     }
 }

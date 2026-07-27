@@ -2,7 +2,7 @@
 
 ## Tổng quan
 
-Dự án sử dụng Laravel 11 (PHP 8.2+) với kiến trúc modular theo domain.
+Dự án sử dụng Laravel 12 (PHP 8.2+) với kiến trúc modular theo domain.
 
 - Domain code đặt trong `app/Modules/<Domain>`.
 - Thành phần framework/core đặt trong `app/Core`.

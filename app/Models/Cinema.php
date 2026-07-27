@@ -18,6 +18,8 @@ class Cinema extends Model
     protected $fillable = [
         'name',
         'address',
+        'city',
+        'district',
         'hotline',
         'hero_image_url',
         'hero_image_cloudinary_id',

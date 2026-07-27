@@ -10,9 +10,11 @@ Route::middleware('auth.jwt')->group(function () {
         Route::get('/name/{name}', [MembershipTierController::class, 'getByName']);
         Route::get('/{id}', [MembershipTierController::class, 'show']);
 
-        Route::post('/', [MembershipTierController::class, 'store']);
-        Route::put('/{id}', [MembershipTierController::class, 'update']);
-        Route::patch('/{id}/deactivate', [MembershipTierController::class, 'deactivate']);
-        Route::delete('/{id}', [MembershipTierController::class, 'destroy']);
+        Route::middleware('role:admin')->group(function () {
+            Route::post('/', [MembershipTierController::class, 'store']);
+            Route::put('/{id}', [MembershipTierController::class, 'update']);
+            Route::patch('/{id}/deactivate', [MembershipTierController::class, 'deactivate']);
+            Route::delete('/{id}', [MembershipTierController::class, 'destroy']);
+        });
     });
 });

@@ -163,6 +163,49 @@ class MovieController extends BaseController
         return $this->respond(new MovieResource($movie));
     }
 
+    // ========= PUBLIC: GET /movies/{movieId}/related =========
+    public function related(string $movieId)
+    {
+        $movie = Movie::findOrFail($movieId);
+        $genres = collect(preg_split('/[,;|]/', (string) $movie->genre))
+            ->map(fn ($genre) => trim($genre))
+            ->filter()
+            ->values();
+
+        $query = Movie::query()
+            ->where('movie_id', '!=', $movie->movie_id)
+            ->whereIn('status', ['SHOWING', 'UPCOMING']);
+
+        if ($genres->isNotEmpty()) {
+            $query->where(function (Builder $builder) use ($genres) {
+                foreach ($genres as $genre) {
+                    $builder->orWhere('genre', 'LIKE', '%' . $genre . '%');
+                }
+            });
+        }
+
+        $related = $query
+            ->withAvg('reviews', 'rating')
+            ->withCount('reviews')
+            ->orderByDesc('reviews_count')
+            ->orderByRaw('COALESCE(premiere_date, created_at) DESC')
+            ->limit(8)
+            ->get();
+
+        if ($related->isEmpty()) {
+            $related = Movie::query()
+                ->where('movie_id', '!=', $movie->movie_id)
+                ->whereIn('status', ['SHOWING', 'UPCOMING'])
+                ->withAvg('reviews', 'rating')
+                ->withCount('reviews')
+                ->orderByRaw('COALESCE(premiere_date, created_at) DESC')
+                ->limit(8)
+                ->get();
+        }
+
+        return $this->respond(MovieResource::collection($related));
+    }
+
     // ========= PUBLIC: GET /movies =========
     public function index(Request $request)
     {

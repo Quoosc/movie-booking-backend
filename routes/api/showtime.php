@@ -6,6 +6,8 @@ use App\Modules\Showtime\Controllers\ShowtimeSeatController;
 
 Route::prefix('showtimes')->group(function () {
     Route::get('/', [ShowtimeController::class, 'index']);
+    Route::get('/search', [ShowtimeController::class, 'search']);
+    Route::get('/options', [ShowtimeController::class, 'searchOptions']);
     Route::get('/{showtimeId}', [ShowtimeController::class, 'show']);
     Route::get('/movie/{movieId}', [ShowtimeController::class, 'byMovie']);
     Route::get('/movie/{movieId}/upcoming', [ShowtimeController::class, 'upcomingByMovie']);
@@ -13,7 +15,7 @@ Route::prefix('showtimes')->group(function () {
     Route::get('/room/{roomId}', [ShowtimeController::class, 'byRoom']);
 });
 
-Route::middleware('auth.jwt')->group(function () {
+Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
     Route::prefix('showtime-seats')->group(function () {
         Route::get('/showtime/{showtimeId}', [ShowtimeSeatController::class, 'getByShowtime']);
         Route::get('/showtime/{showtimeId}/available', [ShowtimeSeatController::class, 'getAvailableByShowtime']);

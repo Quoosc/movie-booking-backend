@@ -6,7 +6,7 @@ use App\Modules\Ticketing\Controllers\ShowtimeTicketTypeController;
 
 Route::get('/ticket-types', [TicketTypeController::class, 'index']);
 
-Route::middleware('auth.jwt')->group(function () {
+Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
     Route::prefix('ticket-types')->group(function () {
         Route::get('/admin', [TicketTypeController::class, 'adminIndex']);
         Route::post('/', [TicketTypeController::class, 'store']);

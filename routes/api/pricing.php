@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Modules\Pricing\Controllers\PriceBaseController;
 use App\Modules\Pricing\Controllers\PriceModifierController;
 
-Route::middleware('auth.jwt')->group(function () {
+Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
     Route::prefix('price-base')->group(function () {
         Route::post('/', [PriceBaseController::class, 'store']);
         Route::get('/', [PriceBaseController::class, 'index']);

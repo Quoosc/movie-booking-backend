@@ -12,6 +12,8 @@ class CinemaResource extends JsonResource
             'cinemaId'    => $this->cinema_id,
             'name'        => $this->name,
             'address'     => $this->address,
+            'city'        => $this->city,
+            'district'    => $this->district,
             'hotline'     => $this->hotline,
             'heroImageUrl' => $this->hero_image_url,
             'heroImageCloudinaryId' => $this->hero_image_cloudinary_id,

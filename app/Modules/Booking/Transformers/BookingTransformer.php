@@ -9,7 +9,7 @@ class BookingTransformer
     public static function toBookingResponse(Booking $booking): array
     {
         return [
-            'bookingId'        => (string) $booking->id,
+            'bookingId'        => (string) $booking->booking_id,
             'showtimeId'       => (string) $booking->showtime_id,
             'movieTitle'       => $booking->showtime->movie->title ?? null,
             'showtimeStartTime'=> optional($booking->showtime->start_time)->toIso8601String(),

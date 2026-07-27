@@ -10,7 +10,7 @@ Route::prefix('cinemas')->group(function () {
     Route::get('/snacks', [CinemaController::class, 'getSnacks']);
     Route::get('/{cinemaId}/snacks', [CinemaController::class, 'getSnacksByCinema']);
 
-    Route::middleware('auth.jwt')->group(function () {
+    Route::middleware(['auth.jwt', 'role:admin'])->group(function () {
         Route::get('/rooms', [CinemaController::class, 'roomsIndex']);
         Route::post('/rooms', [CinemaController::class, 'storeRoom']);
         Route::get('/rooms/{roomId}', [CinemaController::class, 'showRoom']);

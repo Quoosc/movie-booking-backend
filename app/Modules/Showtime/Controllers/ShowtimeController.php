@@ -5,6 +5,7 @@ namespace App\Modules\Showtime\Controllers;
 use App\Core\Http\Controllers\BaseController;
 use App\Modules\Showtime\Resources\ShowtimeResource;
 use App\Models\Movie;
+use App\Models\Cinema;
 use App\Models\Room;
 use App\Models\Seat;
 use App\Models\Showtime;
@@ -290,6 +291,160 @@ class ShowtimeController extends BaseController
             ShowtimeResource::collection($showtimes),
             'OK'
         );
+    }
+
+    // PUBLIC – GET /showtimes/search
+    public function search(Request $request)
+    {
+        $data = $request->validate([
+            'q' => 'nullable|string|max:120',
+            'date' => 'nullable|date',
+            'from' => ['nullable', 'date_format:H:i'],
+            'to' => ['nullable', 'date_format:H:i'],
+            'city' => 'nullable|string|max:120',
+            'cinemaId' => 'nullable|uuid|exists:cinemas,cinema_id',
+            'movieId' => 'nullable|uuid|exists:movies,movie_id',
+            'format' => 'nullable|string|max:50',
+            'minSeats' => 'nullable|integer|min:1|max:20',
+            'page' => 'nullable|integer|min:1',
+            'perPage' => 'nullable|integer|min:1|max:100',
+        ]);
+
+        $query = Showtime::query()
+            ->with(['movie', 'room.cinema'])
+            ->withCount('showtimeSeats as total_seats_count')
+            ->withCount([
+                'showtimeSeats as available_seats_count' => fn ($seatQuery) =>
+                    $seatQuery->where('seat_status', SeatStatus::AVAILABLE->value),
+            ])
+            ->withMin('showtimeSeats as minimum_price', 'price')
+            ->where('is_active', true)
+            ->where('start_time', '>=', now());
+
+        if (!empty($data['q'])) {
+            $term = '%'.trim($data['q']).'%';
+            $query->where(function ($nested) use ($term) {
+                $nested->whereHas('movie', fn ($movieQuery) =>
+                    $movieQuery->where('title', 'like', $term))
+                    ->orWhereHas('room.cinema', fn ($cinemaQuery) =>
+                        $cinemaQuery->where('name', 'like', $term)
+                            ->orWhere('address', 'like', $term));
+            });
+        }
+
+        if (!empty($data['date'])) {
+            $query->whereDate('start_time', $data['date']);
+        }
+        if (!empty($data['from'])) {
+            $query->whereTime('start_time', '>=', $data['from']);
+        }
+        if (!empty($data['to'])) {
+            $query->whereTime('start_time', '<=', $data['to']);
+        }
+        if (!empty($data['movieId'])) {
+            $query->where('movie_id', $data['movieId']);
+        }
+        if (!empty($data['cinemaId'])) {
+            $query->whereHas('room', fn ($roomQuery) =>
+                $roomQuery->where('cinema_id', $data['cinemaId']));
+        }
+        if (!empty($data['city'])) {
+            $query->whereHas('room.cinema', fn ($cinemaQuery) =>
+                $cinemaQuery->where('city', $data['city']));
+        }
+        if (!empty($data['format'])) {
+            $query->where('format', $data['format']);
+        }
+        if (!empty($data['minSeats'])) {
+            $query->whereHas(
+                'showtimeSeats',
+                fn ($seatQuery) => $seatQuery->where(
+                    'seat_status',
+                    SeatStatus::AVAILABLE->value
+                ),
+                '>=',
+                (int) $data['minSeats']
+            );
+        }
+
+        $paginator = $query
+            ->orderBy('start_time')
+            ->paginate((int) ($data['perPage'] ?? 30));
+
+        $items = collect($paginator->items())->map(function (Showtime $showtime) {
+            $movie = $showtime->movie;
+            $room = $showtime->room;
+            $cinema = $room?->cinema;
+
+            return [
+                'showtimeId' => $showtime->showtime_id,
+                'startTime' => $showtime->start_time?->toISOString(),
+                'format' => $showtime->format,
+                'availableSeats' => (int) ($showtime->available_seats_count ?? 0),
+                'totalSeats' => (int) ($showtime->total_seats_count ?? 0),
+                'minimumPrice' => $showtime->minimum_price !== null
+                    ? (float) $showtime->minimum_price
+                    : null,
+                'movie' => [
+                    'movieId' => $movie?->movie_id,
+                    'title' => $movie?->title,
+                    'posterUrl' => $movie?->poster_url,
+                    'duration' => $movie?->duration,
+                    'genre' => $movie?->genre,
+                    'minimumAge' => $movie?->minimum_age,
+                    'language' => $movie?->language,
+                ],
+                'cinema' => [
+                    'cinemaId' => $cinema?->cinema_id,
+                    'name' => $cinema?->name,
+                    'address' => $cinema?->address,
+                    'city' => $cinema?->city,
+                    'district' => $cinema?->district,
+                ],
+                'room' => [
+                    'roomId' => $room?->room_id,
+                    'roomNumber' => $room?->room_number,
+                    'roomType' => $room?->room_type,
+                ],
+            ];
+        })->values();
+
+        return $this->respond([
+            'items' => $items,
+            'pagination' => [
+                'page' => $paginator->currentPage(),
+                'perPage' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'lastPage' => $paginator->lastPage(),
+            ],
+        ]);
+    }
+
+    // PUBLIC – GET /showtimes/options
+    public function searchOptions()
+    {
+        $formats = Showtime::query()
+            ->where('is_active', true)
+            ->where('start_time', '>=', now())
+            ->whereNotNull('format')
+            ->distinct()
+            ->orderBy('format')
+            ->pluck('format')
+            ->values();
+
+        $cities = Cinema::query()
+            ->where('is_active', true)
+            ->whereNotNull('city')
+            ->where('city', '<>', '')
+            ->distinct()
+            ->orderBy('city')
+            ->pluck('city')
+            ->values();
+
+        return $this->respond([
+            'formats' => $formats,
+            'cities' => $cities,
+        ]);
     }
 
     // PUBLIC – GET /showtimes/movie/{movieId}
