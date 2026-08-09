@@ -4,6 +4,7 @@ namespace App\Shared\Services;
 
 use App\Models\RefreshToken;
 use App\Models\User;
+use App\Shared\Support\JwtSigningKey;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Illuminate\Support\Str;
@@ -16,8 +17,7 @@ class TokenService
 
     public function __construct()
     {
-        // Ưu tiên config('jwt.secret'), nếu chưa set thì fallback JWT_SECRET, rồi tới APP_KEY
-        $this->secret = config('jwt.secret', env('JWT_SECRET', config('app.key')));
+        $this->secret = JwtSigningKey::resolve();
 
         $this->ttl    = (int) config('jwt.ttl', 30); // access token sống 30 phút (tùy chỉnh)
         $this->issuer = config('jwt.issuer', 'movie-booking-backend-laravel');

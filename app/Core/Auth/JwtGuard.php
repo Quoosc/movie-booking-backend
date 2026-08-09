@@ -2,6 +2,7 @@
 
 namespace App\Core\Auth;
 
+use App\Shared\Support\JwtSigningKey;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Illuminate\Contracts\Auth\Guard;
@@ -43,7 +44,7 @@ class JwtGuard implements Guard
         }
 
         try {
-            $secret = config('jwt.secret');
+            $secret = JwtSigningKey::resolve();
             $algorithm = config('jwt.algorithm', 'HS256');
 
             $decoded = JWT::decode($token, new Key($secret, $algorithm));
