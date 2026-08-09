@@ -96,7 +96,8 @@ class BookingController extends BaseController
 
     /**
      * GET /api/bookings/{bookingId}
-     * Public-safe booking detail with optional auth
+     * Booking detail with either authenticated ownership or a guest
+     * capability token returned when the booking was created.
      */
     public function showBookingPublic(string $bookingId, Request $request): JsonResponse
     {
@@ -108,15 +109,16 @@ class BookingController extends BaseController
 
         $user = $request->user();
 
-        if ($user) {
-            if ($user->hasRole('ADMIN') || $booking->user_id === $user->user_id) {
-                return $this->respond($this->bookingService->mapBookingToResponse($booking), 'OK', 200);
-            }
-
-            return $this->respond(null, 'Forbidden', 403);
+        if ($user && ($user->hasRole('ADMIN') || $booking->user_id === $user->user_id)) {
+            return $this->respond($this->bookingService->mapBookingToResponse($booking), 'OK', 200);
         }
 
-        return $this->respond($this->bookingService->mapBookingToPublicResponse($booking), 'OK', 200);
+        $guestAccessToken = $request->header('X-Booking-Access-Token');
+        if ($this->bookingService->hasValidGuestAccessToken($booking, $guestAccessToken)) {
+            return $this->respond($this->bookingService->mapBookingToResponse($booking), 'OK', 200);
+        }
+
+        return $this->respond(null, 'Forbidden', 403);
     }
 
     protected function respond($data = null, string $message = 'OK', int $code = 200): JsonResponse

@@ -7,6 +7,7 @@ use App\Core\Http\Controllers\BaseController;
 use App\Modules\Payment\Services\MomoService;
 use App\Modules\Payment\Services\PayPalService;
 use App\Modules\Payment\Repositories\PaymentRepository;
+use App\Modules\Booking\Services\BookingService;
 use App\Enums\PaymentMethod;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -16,7 +17,8 @@ class PaymentController extends BaseController
     public function __construct(
         protected MomoService $momoService,
         protected PayPalService $paypalService,
-        protected PaymentRepository $paymentRepo
+        protected PaymentRepository $paymentRepo,
+        protected BookingService $bookingService,
     ) {}
 
     /**
@@ -25,18 +27,31 @@ class PaymentController extends BaseController
      */
     public function initiatePayment(Request $request): JsonResponse
     {
-        \Log::info('[payments/order] request', $request->all());
-
         $data = $request->validate([
-            'bookingId' => 'required|uuid|exists:bookings,booking_id',
+            'bookingId' => 'required|uuid',
             'paymentMethod' => 'required|in:MOMO,PAYPAL',
-            'amount' => 'required|numeric|min:0',
+            'amount' => 'sometimes|numeric|min:0',
         ]);
+
+        $booking = $this->bookingService->getBookingById($data['bookingId']);
+        if (!$booking) {
+            abort(404, 'Booking not found');
+        }
+        $user = $request->user();
+        $isOwner = $user && ($user->hasRole('ADMIN') || $booking->user_id === $user->user_id);
+        $hasGuestToken = !$isOwner && $this->bookingService->hasValidGuestAccessToken(
+            $booking,
+            $request->header('X-Booking-Access-Token')
+        );
+
+        if (!$isOwner && !$hasGuestToken) {
+            abort(403, 'Forbidden');
+        }
 
         $method = PaymentMethod::from($data['paymentMethod']);
         $paymentRequest = new \App\Modules\Payment\DTO\InitiatePaymentRequest(
             bookingId: $data['bookingId'],
-            amount: (float) $data['amount']
+            amount: (float) $booking->final_price
         );
 
         $response = $method === PaymentMethod::MOMO
@@ -58,8 +73,6 @@ class PaymentController extends BaseController
      */
     public function capturePayment(Request $request): JsonResponse
     {
-        \Log::info('[payments/order/capture] request', $request->all());
-
         $data = $request->validate([
             'transactionId' => 'required|string',
             'paymentMethod' => 'required|in:MOMO,PAYPAL',

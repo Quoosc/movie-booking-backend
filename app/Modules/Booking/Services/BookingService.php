@@ -456,11 +456,36 @@ class BookingService
     }
 
     /**
-     * Map Booking to Public-safe Response
+     * Issue a capability token for a guest booking. The token is intentionally
+     * not persisted: possession of it is the proof required to reopen the
+     * ticket after returning from an external payment gateway.
      */
-    public function mapBookingToPublicResponse(Booking $booking): array
+    public function createGuestAccessToken(Booking $booking): string
     {
-        return $this->buildBookingResponse($booking, false);
+        $appKey = (string) config('app.key');
+        if ($appKey === '') {
+            throw new \LogicException('APP_KEY must be configured before issuing booking access tokens.');
+        }
+
+        return hash_hmac('sha256', $this->guestAccessTokenPayload($booking), $appKey);
+    }
+
+    public function hasValidGuestAccessToken(Booking $booking, ?string $token): bool
+    {
+        if (!is_string($token) || !preg_match('/^[a-f0-9]{64}$/', $token)) {
+            return false;
+        }
+
+        return hash_equals($this->createGuestAccessToken($booking), strtolower($token));
+    }
+
+    private function guestAccessTokenPayload(Booking $booking): string
+    {
+        return implode(':', [
+            'guest-booking-v1',
+            (string) $booking->booking_id,
+            (string) $booking->user_id,
+        ]);
     }
 
     protected function buildBookingResponse(Booking $booking, bool $includeSensitive): array

@@ -62,7 +62,7 @@ class ShowtimeController extends BaseController
             $query->where('showtime_id', '!=', $showtimeId);
         }
 
-        $existing = $query->get();
+        $existing = $query->lockForUpdate()->get();
 
         foreach ($existing as $st) {
             if (!$st->movie) continue;
@@ -79,6 +79,72 @@ class ShowtimeController extends BaseController
         }
     }
 
+    protected function generateShowtimeSeats(Showtime $showtime): void
+    {
+        $roomSeats = Seat::query()
+            ->where('room_id', $showtime->room_id)
+            ->orderBy('row_label')
+            ->orderBy('seat_number')
+            ->get();
+
+        if ($roomSeats->isEmpty()) {
+            abort(Response::HTTP_BAD_REQUEST, 'Room has no seats. Please generate seats before creating showtime.');
+        }
+
+        $showtime->load('room');
+        $now = now();
+        $rows = [];
+
+        foreach ($roomSeats as $seat) {
+            [$price, $breakdown] = $this->priceCalculationService
+                ->calculatePriceWithBreakdown($showtime, $seat);
+
+            $rows[] = [
+                'showtime_seat_id' => (string) Str::uuid(),
+                'seat_id' => $seat->seat_id,
+                'showtime_id' => $showtime->showtime_id,
+                'seat_status' => SeatStatus::AVAILABLE->value,
+                'price' => $price,
+                'price_breakdown' => $breakdown,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        DB::table('showtime_seats')->insert($rows);
+    }
+
+    protected function recalculateShowtimeSeatPrices(Showtime $showtime): void
+    {
+        $showtime->load('room');
+
+        ShowtimeSeat::with('seat')
+            ->where('showtime_id', $showtime->showtime_id)
+            ->get()
+            ->each(function (ShowtimeSeat $showtimeSeat) use ($showtime) {
+                if (!$showtimeSeat->seat) {
+                    return;
+                }
+
+                [$price, $breakdown] = $this->priceCalculationService
+                    ->calculatePriceWithBreakdown($showtime, $showtimeSeat->seat);
+
+                $showtimeSeat->forceFill([
+                    'price' => $price,
+                    'price_breakdown' => $breakdown,
+                ])->save();
+            });
+    }
+
+    protected function hasBookingActivity(Showtime $showtime): bool
+    {
+        return $showtime->bookings()->exists()
+            || $showtime->seatLocks()->exists()
+            || $showtime->showtimeSeats()
+                ->where('seat_status', '!=', SeatStatus::AVAILABLE->value)
+                ->exists();
+    }
+
     // =========================================================
     // ADMIN – POST /showtimes
     // =========================================================
@@ -91,52 +157,25 @@ class ShowtimeController extends BaseController
             'startTime' => 'required|date',
         ]);
 
-        $room  = $this->findRoomOrFail($data['roomId']);
-        $movie = $this->findMovieOrFail($data['movieId']);
-
         $startTime = Carbon::parse($data['startTime']);
 
-        $this->validateNoOverlap(null, $room->room_id, $startTime, $movie->duration);
+        $showtime = DB::transaction(function () use ($data, $startTime) {
+            $room = Room::where('room_id', $data['roomId'])->lockForUpdate()->firstOrFail();
+            $movie = Movie::where('movie_id', $data['movieId'])->firstOrFail();
 
-        $showtime = Showtime::create([
-            'room_id'    => $room->room_id,
-            'movie_id'   => $movie->movie_id,
-            'format'     => $data['format'],
-            'start_time' => $startTime,
-        ]);
+            $this->validateNoOverlap(null, $room->room_id, $startTime, $movie->duration);
 
-        // ✅ AUTO-GENERATE showtime_seats từ seats của room
-        DB::transaction(function () use ($showtime) {
-            $roomSeats = Seat::query()
-                ->where('room_id', $showtime->room_id)
-                ->orderBy('row_label')
-                ->orderBy('seat_number')
-                ->get();
+            $showtime = Showtime::create([
+                'room_id' => $room->room_id,
+                'movie_id' => $movie->movie_id,
+                'format' => $data['format'],
+                'start_time' => $startTime,
+            ]);
 
-            if ($roomSeats->isEmpty()) {
-                abort(400, 'Room has no seats. Please generate seats before creating showtime.');
-            }
+            // Generate all seat inventory inside the same transaction.
+            $this->generateShowtimeSeats($showtime);
 
-            $now = now();
-            $rows = [];
-
-            foreach ($roomSeats as $seat) {
-                [$price, $breakdown] = $this->priceCalculationService
-                    ->calculatePriceWithBreakdown($showtime, $seat);
-
-                $rows[] = [
-                    'showtime_seat_id' => (string) Str::uuid(),
-                    'seat_id'          => $seat->seat_id,
-                    'showtime_id'      => $showtime->showtime_id,
-                    'seat_status'      => SeatStatus::AVAILABLE->value,
-                    'price'            => $price,
-                    'price_breakdown'  => $breakdown,
-                    'created_at'       => $now,
-                    'updated_at'       => $now,
-                ];
-            }
-
-            DB::table('showtime_seats')->insert($rows);
+            return $showtime;
         });
 
         $showtime->load(['room', 'movie']);
@@ -150,12 +189,9 @@ class ShowtimeController extends BaseController
 
     // =========================================================
     // ADMIN – PUT /showtimes/{showtimeId}
-    // (Giữ nguyên logic update của bạn — chưa đụng tới)
     // =========================================================
     public function update(string $showtimeId, Request $request)
     {
-        $showtime = $this->findShowtimeOrFail($showtimeId);
-
         $data = $request->validate([
             'roomId'    => 'nullable|uuid|exists:rooms,room_id',
             'movieId'   => 'nullable|uuid|exists:movies,movie_id',
@@ -163,30 +199,58 @@ class ShowtimeController extends BaseController
             'startTime' => 'nullable|date',
         ]);
 
-        $newRoomId = $data['roomId'] ?? $showtime->room_id;
-        $newMovieId = $data['movieId'] ?? $showtime->movie_id;
-        $newStartTime = isset($data['startTime'])
-            ? Carbon::parse($data['startTime'])
-            : ($showtime->start_time instanceof Carbon ? $showtime->start_time : Carbon::parse($showtime->start_time));
+        $showtime = DB::transaction(function () use ($showtimeId, $data) {
+            $showtime = Showtime::with(['room', 'movie'])
+                ->where('showtime_id', $showtimeId)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $movie = isset($data['movieId'])
-            ? $this->findMovieOrFail($newMovieId)
-            : $this->findMovieOrFail($showtime->movie_id);
+            $currentStartTime = $showtime->start_time instanceof Carbon
+                ? $showtime->start_time
+                : Carbon::parse($showtime->start_time);
+            $newRoomId = $data['roomId'] ?? $showtime->room_id;
+            $newMovieId = $data['movieId'] ?? $showtime->movie_id;
+            $newFormat = $data['format'] ?? $showtime->format;
+            $newStartTime = isset($data['startTime'])
+                ? Carbon::parse($data['startTime'])
+                : $currentStartTime;
 
-        if (
-            $newRoomId !== $showtime->room_id ||
-            $newMovieId !== $showtime->movie_id ||
-            !$newStartTime->equalTo($showtime->start_time instanceof Carbon ? $showtime->start_time : Carbon::parse($showtime->start_time))
-        ) {
-            $this->validateNoOverlap($showtimeId, $newRoomId, $newStartTime, $movie->duration);
-        }
+            $roomChanged = $newRoomId !== $showtime->room_id;
+            $scheduleChanged = $roomChanged
+                || $newMovieId !== $showtime->movie_id
+                || !$newStartTime->equalTo($currentStartTime);
+            $pricingChanged = $scheduleChanged || $newFormat !== $showtime->format;
 
-        if (isset($data['roomId'])) $showtime->room_id = $data['roomId'];
-        if (isset($data['movieId'])) $showtime->movie_id = $data['movieId'];
-        if (isset($data['format'])) $showtime->format = $data['format'];
-        if (isset($data['startTime'])) $showtime->start_time = $newStartTime;
+            if ($pricingChanged && $this->hasBookingActivity($showtime)) {
+                abort(
+                    Response::HTTP_CONFLICT,
+                    'Cannot change room, movie, format, or start time after booking activity has started.'
+                );
+            }
 
-        $showtime->save();
+            $movie = Movie::where('movie_id', $newMovieId)->firstOrFail();
+            Room::where('room_id', $newRoomId)->lockForUpdate()->firstOrFail();
+
+            if ($scheduleChanged) {
+                $this->validateNoOverlap($showtimeId, $newRoomId, $newStartTime, $movie->duration);
+            }
+
+            $showtime->forceFill([
+                'room_id' => $newRoomId,
+                'movie_id' => $newMovieId,
+                'format' => $newFormat,
+                'start_time' => $newStartTime,
+            ])->save();
+
+            if ($roomChanged) {
+                $showtime->showtimeSeats()->delete();
+                $this->generateShowtimeSeats($showtime);
+            } elseif ($pricingChanged) {
+                $this->recalculateShowtimeSeatPrices($showtime);
+            }
+
+            return $showtime;
+        });
         $showtime->load(['room', 'movie']);
 
         return $this->respond(new ShowtimeResource($showtime), 'Showtime updated');
@@ -298,9 +362,9 @@ class ShowtimeController extends BaseController
     {
         $data = $request->validate([
             'q' => 'nullable|string|max:120',
-            'date' => 'nullable|date',
+            'date' => ['nullable', 'date_format:Y-m-d', 'required_with:from,to'],
             'from' => ['nullable', 'date_format:H:i'],
-            'to' => ['nullable', 'date_format:H:i'],
+            'to' => ['nullable', 'date_format:H:i', 'after_or_equal:from'],
             'city' => 'nullable|string|max:120',
             'cinemaId' => 'nullable|uuid|exists:cinemas,cinema_id',
             'movieId' => 'nullable|uuid|exists:movies,movie_id',
@@ -333,13 +397,19 @@ class ShowtimeController extends BaseController
         }
 
         if (!empty($data['date'])) {
-            $query->whereDate('start_time', $data['date']);
-        }
-        if (!empty($data['from'])) {
-            $query->whereTime('start_time', '>=', $data['from']);
-        }
-        if (!empty($data['to'])) {
-            $query->whereTime('start_time', '<=', $data['to']);
+            $cinemaTimezone = config('cinema.timezone', 'Asia/Ho_Chi_Minh');
+            $localDate = Carbon::createFromFormat('Y-m-d', $data['date'], $cinemaTimezone);
+            $localStart = !empty($data['from'])
+                ? Carbon::createFromFormat('Y-m-d H:i', $data['date'].' '.$data['from'], $cinemaTimezone)
+                : $localDate->copy()->startOfDay();
+            $localEnd = !empty($data['to'])
+                ? Carbon::createFromFormat('Y-m-d H:i', $data['date'].' '.$data['to'], $cinemaTimezone)->endOfMinute()
+                : $localDate->copy()->endOfDay();
+
+            $query->whereBetween('start_time', [
+                $localStart->setTimezone('UTC'),
+                $localEnd->setTimezone('UTC'),
+            ]);
         }
         if (!empty($data['movieId'])) {
             $query->where('movie_id', $data['movieId']);
@@ -510,8 +580,13 @@ class ShowtimeController extends BaseController
             'endDate'   => 'required|date|after_or_equal:startDate',
         ]);
 
-        $startDate = Carbon::parse($data['startDate']);
-        $endDate   = Carbon::parse($data['endDate']);
+        $cinemaTimezone = config('cinema.timezone', 'Asia/Ho_Chi_Minh');
+        $startDate = Carbon::parse($data['startDate'], $cinemaTimezone)
+            ->startOfDay()
+            ->setTimezone('UTC');
+        $endDate = Carbon::parse($data['endDate'], $cinemaTimezone)
+            ->endOfDay()
+            ->setTimezone('UTC');
 
         $showtimes = Showtime::with(['room', 'movie'])
             ->where('movie_id', $movieId)

@@ -108,7 +108,14 @@ class CheckoutService
 
             $this->seatLockRepository->delete($seatLock);
 
-            return $this->mapBookingToResponse($booking);
+            $response = $this->mapBookingToResponse($booking);
+
+            if ($sessionContext->isGuest()) {
+                $response['guestAccessToken'] = $this->bookingService
+                    ->createGuestAccessToken($booking);
+            }
+
+            return $response;
         });
     }
 
@@ -127,13 +134,19 @@ class CheckoutService
 
             $paymentResult = $this->initiatePayment($bookingId, $paymentMethod, $amount);
 
-            return [
+            $response = [
                 'bookingId' => $bookingId,
                 'paymentId' => $paymentResult['paymentId'],
                 'paymentMethod' => $paymentMethod,
                 'redirectUrl' => $paymentResult['paymentUrl'] ?? $paymentResult['redirectUrl'] ?? null,
                 'message' => 'Booking confirmed and payment initiated',
             ];
+
+            if (!empty($bookingResponse['guestAccessToken'])) {
+                $response['guestAccessToken'] = $bookingResponse['guestAccessToken'];
+            }
+
+            return $response;
         });
     }
 
@@ -153,6 +166,13 @@ class CheckoutService
 
         $existingUser = User::where('email', $guestInfo['email'])->first();
         if ($existingUser) {
+            if (strtoupper((string) $existingUser->role) !== 'GUEST') {
+                throw new CustomException(
+                    'This email is already registered. Please sign in before booking.',
+                    409
+                );
+            }
+
             return $existingUser;
         }
 

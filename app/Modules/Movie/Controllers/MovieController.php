@@ -296,15 +296,23 @@ class MovieController extends BaseController
     {
         $movie = Movie::findOrFail($movieId);
 
-        $dateStr = $request->query('date');
-        $date = $dateStr ? Carbon::parse($dateStr)->startOfDay() : Carbon::today();
+        $request->validate([
+            'date' => ['nullable', 'date_format:Y-m-d'],
+        ]);
 
-        $today = Carbon::today();
+        $dateStr = $request->query('date');
+        $cinemaTimezone = config('cinema.timezone', 'Asia/Ho_Chi_Minh');
+        $date = $dateStr
+            ? Carbon::createFromFormat('Y-m-d', $dateStr, $cinemaTimezone)->startOfDay()
+            : Carbon::now($cinemaTimezone)->startOfDay();
+
+        $today = Carbon::now($cinemaTimezone)->startOfDay();
         $isToday = $date->isSameDay($today);
 
         // start / end trong ngày
-        $startOfDay = $isToday ? Carbon::now() : $date->copy()->startOfDay();
-        $endOfDay   = $date->copy()->endOfDay();
+        $startOfDay = ($isToday ? Carbon::now($cinemaTimezone) : $date->copy()->startOfDay())
+            ->setTimezone('UTC');
+        $endOfDay = $date->copy()->endOfDay()->setTimezone('UTC');
 
         $showtimes = Showtime::with(['room.cinema'])
             ->where('movie_id', $movie->movie_id)

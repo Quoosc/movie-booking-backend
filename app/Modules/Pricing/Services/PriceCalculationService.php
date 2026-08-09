@@ -176,7 +176,8 @@ class PriceCalculationService
      */
     private function checkDayType(string $conditionValue, $startTime): bool
     {
-        $dt = $startTime instanceof Carbon ? $startTime : Carbon::parse($startTime);
+        $dt = ($startTime instanceof Carbon ? $startTime->copy() : Carbon::parse($startTime))
+            ->setTimezone(config('cinema.timezone', 'Asia/Ho_Chi_Minh'));
         $dayOfWeek = $dt->dayOfWeekIso; // 1..7 (Mon..Sun)
         $isWeekend = in_array($dayOfWeek, [6, 7], true);
 
@@ -190,7 +191,8 @@ class PriceCalculationService
      */
     private function checkTimeRange(string $conditionValue, $startTime): bool
     {
-        $dt   = $startTime instanceof Carbon ? $startTime : Carbon::parse($startTime);
+        $dt = ($startTime instanceof Carbon ? $startTime->copy() : Carbon::parse($startTime))
+            ->setTimezone(config('cinema.timezone', 'Asia/Ho_Chi_Minh'));
         $time = $dt->toTimeString(); // HH:MM:SS
         $h    = (int) substr($time, 0, 2);
         $m    = (int) substr($time, 3, 2);

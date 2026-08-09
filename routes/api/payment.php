@@ -5,7 +5,8 @@ use App\Modules\Payment\Controllers\PaymentController;
 use App\Modules\Payment\Controllers\RefundController;
 
 Route::prefix('payments')->group(function () {
-    Route::post('/order', [PaymentController::class, 'initiatePayment'])->middleware('throttle:20,1');
+    Route::post('/order', [PaymentController::class, 'initiatePayment'])
+        ->middleware(['auth.optional', 'throttle:20,1']);
     Route::post('/order/capture', [PaymentController::class, 'capturePayment'])->middleware('throttle:30,1');
     Route::get('/order/status', [PaymentController::class, 'paymentStatus'])->middleware('throttle:60,1');
     Route::get('/momo/ipn', [PaymentController::class, 'handleMomoIpnGet']);
