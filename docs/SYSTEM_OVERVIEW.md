@@ -1,220 +1,201 @@
-# SYSTEM_OVERVIEW.md — Tổng quan hệ thống Backend
+# Tổng quan hệ thống Backend
 
-## 1. Tech Stack
+> Cập nhật theo mã nguồn và dependency đã cài ngày 2026-08-09.
 
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| Framework | Laravel | 12.x |
-| Language | PHP | 8.2+ (8.3 recommended) |
-| Database | MySQL | 8.0+ (Laragon) |
-| Authentication | JWT (custom) | firebase/php-jwt |
-| Payment Gateway | PayPal REST API | Sandbox mode |
-| Payment Gateway | Momo | Test endpoint |
-| OAuth2 | Google Login | socialite |
-| Seat locking | Redis | Distributed multi-seat locks |
-| Cache/Queue | Configurable | Database/Redis by environment |
-| Server | Laragon | Windows dev |
+## 1. Tech stack
 
-## 2. Kiến trúc hệ thống
+| Thành phần | Hiện tại |
+|---|---|
+| PHP | Constraint `^8.2`; môi trường kiểm tra `8.3.16` |
+| Laravel Framework | `12.65.0` (`^12.0`) |
+| JWT | `firebase/php-jwt 7.1.0`, guard/middleware custom |
+| Google OAuth | `laravel/socialite 5.29.0` |
+| Redis client | `predis/predis 3.5.1` hoặc client theo env |
+| Database dev | MySQL 8.x (`movie_booking_laravel`) |
+| Payment | PayPal và MoMo |
+| Asset | Cloudinary URL/public ID |
+| Queue/cache | Database hoặc Redis theo environment |
 
-```
-                         ┌──────────────────┐
-                         │   React Frontend │
-                         │   :5173 (Vite)   │
-                         └────────┬─────────┘
-                                  │ HTTP (API calls)
-                                  ▼
-┌─────────────────────────────────────────────────────────┐
-│                  Laravel Backend (:8000)                 │
-│                                                         │
-│  ┌──────────┐   ┌──────────┐   ┌──────────────────┐    │
-│  │ Middleware│──→│Controller│──→│    Service        │    │
-│  │ JWT/Role │   │          │   │ (Business Logic)  │    │
-│  └──────────┘   └──────────┘   └────────┬─────────┘    │
-│                                          │              │
-│                                ┌─────────┴──────────┐   │
-│                                │    Repository       │   │
-│                                │  (Data Access)      │   │
-│                                └─────────┬──────────┘   │
-│                                          │              │
-│                                ┌─────────┴──────────┐   │
-│                                │   Model (Eloquent)  │   │
-│                                │   → MySQL DB        │   │
-│                                └────────────────────┘   │
-│                                                         │
-│  ┌──────────────────┐  ┌──────────────┐                 │
-│  │ DTOs / Resources │  │ Transformers │                 │
-│  │ (Input/Output)   │  │ (Response)   │                 │
-│  └──────────────────┘  └──────────────┘                 │
-└─────────────────────────────────────────────────────────┘
-          │                    │
-          ▼                    ▼
-  ┌──────────────┐    ┌──────────────┐
-  │ PayPal API   │    │  Momo API    │
-  │ (sandbox)    │    │  (test)      │
-  └──────────────┘    └──────────────┘
+## 2. Kiến trúc
+
+```text
+React frontend (:5173)
+        │ JSON + Bearer/cookie/guest headers
+        ▼
+Laravel API (:8000 local hoặc :8080 qua Docker)
+  Route → Middleware → Form Request → Controller
+                                    → Service
+                                    → Repository/Eloquent → MySQL
+                                    → Redis lock/cache
+                                    → PayPal/MoMo/Google/Mail
 ```
 
-## 3. Authentication & Authorization
+Code được tách thành 13 module nghiệp vụ. Xem cây thư mục tại [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md).
 
-### 3.1 JWT Flow
+## 3. Chức năng hiện có
 
-```
-Register → POST /api/auth/register
-  → Hash password → Tạo user → Trả user info
+### Người dùng
 
-Login → POST /api/auth/login
-  → Verify credentials → Tạo accessToken (JWT) + refreshToken
-  → Trả: { accessToken, refreshToken, user }
+- đăng ký, login email/password và Google OAuth;
+- access/refresh token, logout một hoặc mọi phiên;
+- profile, đổi mật khẩu, avatar;
+- loyalty balance, transaction history và membership tiers;
+- notifications đọc/chưa đọc/xóa;
+- booking history và QR.
 
-Protected Request:
-  → Header: Authorization: Bearer <accessToken>
-  → JwtAuthMiddleware decode JWT → set $request->user_id, $request->user_role
-  → Controller xử lý
+### Nội dung và khám phá
 
-Token Refresh → POST /api/auth/refresh
-  → Đọc cookie HttpOnly hoặc refreshToken trong body
-  → Rotate refresh token → tạo accessToken mới
-```
+- CRUD/search/filter phim;
+- rạp, phòng, ghế, snack;
+- global showtime search theo phim/rạp/ngày/giờ/format/ghế trống;
+- hero slides và contact submissions;
+- phim liên quan;
+- review, reply, reaction, report, spoiler/media và moderation audit.
 
-### 3.2 Middleware Stack
+### Booking/payment
 
-| Middleware | Key | Mô tả |
-|-----------|-----|-------|
-| `JwtAuthMiddleware` | `auth.jwt` | Validate JWT, reject nếu invalid/expired |
-| `OptionalJwtAuthMiddleware` | `auth.optional` | Parse JWT nếu có, không reject nếu không có |
-| `CheckRole` | `role:admin` | Check `$request->user_role === 'ADMIN'` |
+- guest/member seat locking với TTL;
+- price base, modifiers, ticket types và promotion;
+- server-authoritative price preview/confirm;
+- PayPal create/capture/refund;
+- MoMo create order, signed IPN, status polling và refund;
+- email/notification/loyalty khi booking được xác nhận;
+- cleanup lock và booking hết hạn.
 
-### 3.3 Guest Support
+### Admin
 
-```
-Guest (chưa login):
-  → FE tạo UUID → gửi header: X-Session-Id: <uuid>
-  → Backend dùng SessionContext DTO để resolve:
-    - Nếu có JWT → type=USER, id=user_id
-    - Nếu có X-Session-Id → type=GUEST_SESSION, id=session_id
-    - Không có gì → reject
-```
+CRUD/quản lý user, membership, movie, cinema, room, seat, showtime, ticket/pricing, snack, promotion, hero slide, booking/payment/refund và review moderation.
 
-## 4. Payment System
+## 4. Authentication và authorization
 
-### 4.1 Luồng thanh toán
+### JWT lifecycle
 
-```
-FE gọi: POST /api/payments/order
-  → PaymentController::initiatePayment()
-  → Kiểm tra booking status = PENDING_PAYMENT
-  → Tùy method:
-    ├── PAYPAL:
-    │   → PayPalService::createOrder()
-    │   → Gọi PayPal REST API → tạo order
-    │   → Trả paymentUrl (PayPal redirect)
-    │   → FE redirect user → PayPal approve
-    │   → PayPal callback → FE gọi capture
-    │
-    └── MOMO:
-        → MomoService::createPayment()
-        → Gọi Momo API → tạo order
-        → Trả paymentUrl (Momo redirect)
-        → User approve → Momo IPN callback
+```text
+Login
+  → verify password
+  → access JWT + opaque refresh token
+  → refresh token lưu DB và có thể phát bằng HttpOnly cookie
 
-PayPal capture: POST /api/payments/order/capture
-  → PaymentController::capturePayment()
-  → PayPalService::captureOrder(orderId)
+Protected request
+  → Authorization: Bearer <accessToken>
+  → JwtAuthMiddleware/JwtGuard verify signature, issuer, expiry
+  → resolve current User
 
-MoMo confirmation:
-  → MoMo gửi signed IPN tới /api/payments/momo/ipn
-  → Backend verify signature và cập nhật payment
-  → FE poll GET /api/payments/order/status bằng orderId
-  → Cập nhật payment status → COMPLETED
-  → Cập nhật booking status → CONFIRMED
-  → Cập nhật showtime_seats → BOOKED
-  → Award loyalty points (nếu member)
+Refresh
+  → verify refresh token/cookie
+  → rotate token
+  → trả access token và refresh token mới
 ```
 
-### 4.2 Currency Conversion
+`JwtSigningKey` bảo đảm key ký HS256 tối thiểu 32 byte. Nếu `JWT_SECRET` ngắn nhưng `APP_KEY` hợp lệ, hệ thống derive key an toàn và nhất quán cho cả encode/decode. Không đưa secret thật vào repository hoặc tài liệu.
 
-```
-VND (default) → PayPal yêu cầu USD
-  → ExchangeRateService::convertVndToUsd(amount)
-  → Fallback rate: 1 VND = 0.00004 USD (config)
-  → Payment lưu cả 2:
-    - amount (VND), currency (VND)
-    - gateway_amount (USD), gateway_currency (USD)
-    - exchange_rate (tỷ giá applied)
-```
+### Quyền
 
-## 5. Pricing Engine
+| Middleware | Hành vi |
+|---|---|
+| `auth.jwt` | 401 nếu thiếu/sai/hết hạn token |
+| `auth.optional` | Gắn user nếu token hợp lệ; cho guest qua nếu không có token |
+| `role:admin` | 403 nếu current user không phải admin |
 
-```
-Giá vé = PriceBase (giá gốc) + Modifiers (phụ thu/giảm)
+## 5. Guest booking security
 
-PriceCalculationService::calculatePrice(showtime, seat, ticketType):
-  1. Lấy PriceBase active → base_price
-  2. Query PriceModifiers active → filter theo điều kiện:
-     - DAY_OF_WEEK: showtime day = WEEKEND? → phụ thu
-     - SEAT_TYPE: seat = VIP? → phụ thu
-     - SHOWTIME_FORMAT: format = 3D? → phụ thu
-  3. Apply modifiers:
-     - PERCENTAGE: price += price * modifier_value / 100
-     - FIXED_AMOUNT: price += modifier_value
-  4. Lưu price + price_breakdown vào showtime_seats
-```
+Guest có hai loại định danh khác nhau:
 
-## 6. Booking Lifecycle
+1. `X-Session-Id`: sở hữu seat lock trong phiên checkout.
+2. `X-Booking-Access-Token`: capability HMAC gắn với booking, được trả khi confirm guest booking.
 
-```
-Trạng thái: PENDING_PAYMENT → CONFIRMED → (optional) REFUND_PENDING → REFUNDED
-                            ↘ CANCELLED
-                            ↘ EXPIRED (timeout)
+`GET /api/bookings/{id}` và `POST /api/payments/order` chỉ cho phép owner/admin hoặc guest có capability token hợp lệ. So sánh token dùng `hash_equals`; biết UUID booking không đủ để đọc dữ liệu vé.
 
-CheckoutLifecycleService quản lý transitions:
-  1. Lock Seats (10 phút TTL)
-  2. Confirm Booking → status = PENDING_PAYMENT
-  3. Payment:
-     - Success → CONFIRMED
-     - Timeout → EXPIRED (artisan schedule cleanup)
-     - Cancel → CANCELLED
-  4. Refund:
-     - Request → REFUND_PENDING
-     - Gateway confirm → REFUNDED
+## 6. Payment trust model
+
+### Server-authoritative amount
+
+`PaymentController::initiatePayment` nhận `bookingId` và method, kiểm tra ownership/capability rồi luôn lấy `bookings.final_price`. Field `amount` từ client chỉ còn tương thích và không quyết định số tiền.
+
+### PayPal
+
+```text
+Create order → browser approve → frontend callback
+→ POST /api/payments/order/capture
+→ backend gọi PayPal capture
+→ verify status, amount, currency
+→ lifecycle xác nhận booking/ghế/điểm/notification
 ```
 
-## 7. Config quan trọng
+### MoMo
 
-| Config | File | Key env | Default | Mô tả |
-|--------|------|---------|---------|-------|
-| JWT Secret | `config/jwt.php` | `JWT_SECRET` | — | Secret key cho JWT |
-| JWT TTL | `config/jwt.php` | `JWT_TTL` | 500 min | Token lifetime |
-| Seat Lock Duration | `config/booking.php` | `BOOKING_LOCK_DURATION_MINUTES` | 10 min | TTL lock ghế |
-| Max Seats | `config/booking.php` | `BOOKING_MAX_SEATS` | 10 | Max ghế / booking |
-| Payment Timeout | `config/booking.php` | `BOOKING_PAYMENT_TIMEOUT_MINUTES` | 15 min | Timeout thanh toán |
-| PayPal Mode | `config/payment.php` | `PAYPAL_MODE` | sandbox | sandbox / live |
-| Momo Endpoint | `config/payment.php` | `MOMO_API_ENDPOINT` | test URL | Momo gateway URL |
-| Currency | `.env` | `CURRENCY_DEFAULT` | VND | Default currency |
-| VND→USD Rate | `config/payment.php` | — | 0.00004 | Fallback exchange rate |
+```text
+Create order → browser thanh toán
+MoMo POST signed IPN → verify HMAC + orderId + amount
+→ update payment/booking idempotently
+Browser redirect → frontend poll GET /payments/order/status
+```
 
-## 8. Cách chạy dự án
+Redirect query từ browser không bao giờ tự chuyển payment sang success. Endpoint capture legacy với method `MOMO` chỉ đọc trạng thái đã lưu.
 
-```bash
-# 1. Clone + cài dependencies
+## 7. Booking lifecycle
+
+```text
+Seat AVAILABLE
+  → LOCKED (seat lock, mặc định 10 phút)
+  → Booking PENDING_PAYMENT (mặc định 15 phút)
+  → Payment success → Booking CONFIRMED + Seat BOOKED
+  → Timeout/cancel → EXPIRED/CANCELLED + Seat AVAILABLE
+  → Refund → payment/refund state + booking response REFUND_* + Seat AVAILABLE khi hoàn tất
+```
+
+Late payment được xử lý trong `CheckoutLifecycleService`; nếu ghế đã được người khác lấy, hệ thống không xác nhận chồng và có luồng automatic refund.
+
+## 8. Pricing
+
+```text
+PriceBase active
+  + PriceModifier theo DAY_OF_WEEK / SEAT_TYPE / SHOWTIME_FORMAT
+  + TicketType modifier
+  + Snack
+  - Promotion/membership discount
+  = final_price do backend tính
+```
+
+Giá concrete được lưu ở seat lock/booking seat để giữ snapshot, còn `showtime_seats.price_breakdown` lưu cách tính tại suất ghế.
+
+## 9. Config quan trọng
+
+| File | Env chính | Default/ý nghĩa |
+|---|---|---|
+| `config/jwt.php` | `JWT_SECRET`, `JWT_TTL`, `JWT_REFRESH_TTL`, `JWT_ISSUER` | TTL access mặc định 500 phút |
+| `config/booking.php` | `BOOKING_LOCK_DURATION_MINUTES` | 10 phút |
+| `config/booking.php` | `BOOKING_PAYMENT_TIMEOUT_MINUTES` | 15 phút |
+| `config/booking.php` | `BOOKING_MAX_SEATS` | 10 ghế |
+| `config/cinema.php` | `CINEMA_TIMEZONE` | `Asia/Ho_Chi_Minh` |
+| `config/cors.php` | `CORS_ALLOWED_ORIGINS` | Danh sách frontend origins |
+| `config/payment.php` | `PAYPAL_*`, `MOMO_*` | Credential/callback/gateway |
+| `config/currency.php` | `PAYMENT_PAYPAL_CURRENCY` | Currency PayPal |
+| `config/services.php` | `GOOGLE_*`, `FRONTEND_REDIRECT_URL` | OAuth |
+| `config/database.php` | `REDIS_*` | Lock/cache/queue Redis |
+
+## 10. Chạy local
+
+```powershell
 composer install
-
-# 2. Copy .env
-cp .env.example .env
-# Sửa DB_*, JWT_*, PAYPAL_*, MOMO_* theo môi trường
-
-# 3. Generate app key
+Copy-Item .env.example .env
 php artisan key:generate
-
-# 4. Chạy migrations
-php artisan migrate
-
-# 5. (Optional) Seed data
-php artisan db:seed
-
-# 6. Start server
+php artisan migrate --seed
 php artisan serve --port=8000
-
-# Hoặc dùng Laragon → auto detect
 ```
+
+Ở process khác nếu dùng async mail/notification và cleanup:
+
+```powershell
+php artisan queue:work
+php artisan schedule:work
+```
+
+Kiểm tra:
+
+```powershell
+php artisan route:list
+php artisan test
+```
+
+Không dùng credential sandbox/production thật trong tài liệu. Hướng dẫn tunnel xem [DEMO_CLOUDFLARE_TUNNEL.md](./DEMO_CLOUDFLARE_TUNNEL.md).

@@ -1,256 +1,266 @@
-# FLOW.md — Luồng dữ liệu Backend (Data Flow)
+# Luồng dữ liệu Backend
 
-## 1. Request → Response Pipeline
+> Cập nhật theo mã nguồn ngày 2026-08-09.
 
+## 1. Request pipeline
+
+```text
+HTTP request
+  → API/web route
+  → CORS + throttle
+  → auth.jwt / auth.optional
+  → role:admin nếu cần
+  → Form Request hoặc controller validation
+  → Controller
+  → Domain Service
+  → Repository/Eloquent + DB transaction
+  → Resource/Transformer/JSON
 ```
-HTTP Request (from Frontend)
-  → routes/api.php (route matching)
-  → Middleware stack:
-    ├── CORS (config/cors.php)
-    ├── auth.jwt (JwtAuthMiddleware) — nếu route protected
-    ├── auth.optional (OptionalJwtAuthMiddleware) — nếu route cho guest
-    └── role:admin (CheckRole) — nếu route admin-only
-  → Form Request Validation (nếu có)
-  → Controller method
-  → Service (business logic)
-  → Repository (data access) / Model (Eloquent query)
-  → Transformer / Resource (format response)
-  → JSON Response: { code, message, data }
-```
 
-## 2. Authentication Flow
+Response hiện có cả dạng envelope `{ code, message, data }` và object trực tiếp ở một số endpoint booking/payment legacy. HTTP status là nguồn quyết định thành công/thất bại.
 
-### 2.1 Register
+## 2. Auth flow
 
-```
+### Register/login
+
+```text
 POST /api/auth/register
-  → AuthController::register()
-  → Validate: email unique, password confirm
-  → Hash password (bcrypt, 12 rounds)
-  → User::create() → UUID auto
-  → Trả { success: true }
-```
+  → validate unique email/password confirmation
+  → hash password
+  → tạo User UUID
 
-### 2.2 Login
-
-```
 POST /api/auth/login
-  → AuthController::login()
-  → UserService::findByEmail(email)
-  → Hash::check(password, user.password)
-  → Nếu đúng:
-    → TokenService::createAccessToken(user) → JWT (TTL = 180 min)
-    → TokenService::createRefreshToken(user) → lưu DB (refresh_tokens)
-    → Trả { accessToken, refreshToken, user: { userId, email, role, ... } }
-  → Nếu sai: 401 Unauthorized
+  → throttle
+  → tìm user + Hash::check
+  → TokenService tạo access JWT
+  → tạo/ghi refresh token trong DB
+  → phát refresh cookie nếu cấu hình
+  → trả token + user
 ```
 
-### 2.3 JWT Middleware
+`TokenService` và `JwtGuard` cùng resolve key qua `JwtSigningKey`, nên không còn trường hợp bên ký và bên verify dùng key khác nhau. Key ngắn được derive từ `APP_KEY`; nếu không có tối thiểu 32 byte entropy hệ thống dừng với lỗi cấu hình rõ ràng.
 
-```
-JwtAuthMiddleware (auth.jwt):
-  → Lấy Authorization: Bearer <token>
-  → TokenService::decodeToken(token)
-    → firebase/php-jwt decode
-    → Verify exp, iss
-  → Inject $request->user_id, $request->user_role
-  → next($request)
+### Refresh/logout
 
-OptionalJwtAuthMiddleware (auth.optional):
-  → Nếu có token → decode + inject
-  → Nếu không có token → vẫn cho qua (guest)
-```
+```text
+GET hoặc POST /api/auth/refresh
+  → đọc refresh cookie hoặc body token
+  → verify DB token + expiry
+  → rotate refresh token
+  → trả access/refresh token mới
 
-### 2.4 OAuth2 Google
+POST /api/auth/logout
+  → thu hồi phiên hiện tại
 
-```
-GET /login/oauth2/code/google (web route)
-  → OAuthController / Socialite
-  → Google redirect → callback
-  → Tìm user by email:
-    - Có → login
-    - Chưa có → tạo user mới (password = null, provider = google)
-  → Tạo accessToken + refreshToken
-  → Redirect FE: FRONTEND_REDIRECT_URL?token=xxx&refreshToken=xxx
+POST /api/auth/logout-all (JWT)
+  → thu hồi mọi refresh token của current user
 ```
 
-## 3. Booking Flow (Backend)
+### Google OAuth
 
-### 3.1 Step 1: Lock Seats
-
+```text
+GET /oauth2/authorization/google
+  → Socialite redirect Google
+GET /login/oauth2/code/google
+  → upsert user theo email/provider
+  → tạo token
+  → redirect FRONTEND_REDIRECT_URL?token=...&refreshToken=...
 ```
+
+## 3. Session context và guest
+
+`SessionHelper` resolve context theo thứ tự:
+
+1. JWT hợp lệ → owner type `USER`, ID là `user_id`.
+2. Không có user nhưng có `X-Session-Id` hợp lệ → `GUEST_SESSION`.
+3. Không có cả hai → từ chối ở nghiệp vụ cần owner.
+
+`X-Session-Id` chỉ chứng minh ownership của seat lock; sau khi booking được tạo, guest nhận `guestAccessToken` HMAC riêng và phải gửi `X-Booking-Access-Token` để đọc booking/tạo payment.
+
+## 4. Booking flow
+
+### Lock seats
+
+```text
 POST /api/seat-locks
-  → SeatLockController::lockSeats()
-  → LockSeatsRequest validate: { showtimeId, seats: [{ showtimeSeatId, ticketTypeId }] }
-  → SessionContext resolve (JWT user hoặc X-Session-Id guest)
-  → BookingService::lockSeats():
-    1. Check số ghế ≤ BOOKING_MAX_SEATS (config: 10)
-    2. Query ShowtimeSeat WHERE id IN (...) AND seat_status = 'AVAILABLE'
-    3. Nếu bất kỳ ghế nào không AVAILABLE → 409 Conflict
-    4. PriceCalculationService::calculatePrice() cho mỗi ghế
-    5. Tạo SeatLock record (TTL = 10 phút)
-    6. Tạo SeatLockSeat records (mỗi ghế 1 record, lưu price)
-    7. Update ShowtimeSeat.seat_status = 'LOCKED'
-    8. Trả LockSeatsResponse: { lockId, expiresAt, remainingSeconds, seats }
+  → validate showtimeId + seats/ticketTypeId
+  → resolve SessionContext
+  → DB transaction
+      1. kiểm tra số ghế ≤ BOOKING_MAX_SEATS
+      2. xác thực showtime/ticket type/ghế
+      3. lấy distributed locks qua Redis khi khả dụng
+      4. từ chối ghế không AVAILABLE (409)
+      5. tính price snapshot cho từng ghế
+      6. tạo seat_locks + seat_lock_seats
+      7. showtime_seats → LOCKED
+  → trả lockId, expiresAt, remainingSeconds
 ```
 
-### 3.2 Step 2: Price Preview
+Redis giảm race giữa process; database transaction và status là nguồn trạng thái bền vững.
 
-```
+### Price preview
+
+```text
 POST /api/bookings/price-preview
-  → BookingController::pricePreview()
-  → PricePreviewRequest validate: { lockId, snacks, promotionCode }
-  → BookingService::previewPrice():
-    1. Lấy SeatLock + SeatLockSeats → tính tổng tiền vé
-    2. Lấy snacks → tính tổng tiền bắp nước
-    3. Validate promotionCode → PromotionService::validate()
-    4. Tính discount → finalPrice
-    5. Trả breakdown: { seatTotal, snackTotal, discount, finalPrice }
+  → xác minh lock còn hạn và thuộc current session
+  → seat snapshot + snacks
+  → validate promotion/membership
+  → trả seatTotal, snackTotal, discount, finalPrice, breakdown
 ```
 
-### 3.3 Step 3: Confirm Booking
+### Confirm
 
-```
+```text
 POST /api/bookings/confirm
-  → BookingController::confirmBooking()
-  → ConfirmBookingRequest validate: { lockId, promotionCode, snackCombos, guestInfo }
-  → BookingService::confirmBooking():
-    1. Validate SeatLock còn active + chưa expired
-    2. Tạo Booking record (status = PENDING_PAYMENT)
-    3. Tạo BookingSeat records (copy từ SeatLockSeat)
-    4. Tạo BookingSnack records (snackCombos)
-    5. Áp promotion → BookingPromotion record
-    6. Set payment_expires_at = now + 15 phút (config)
-    7. Trả BookingResponse
+  → validate lock/session/guestInfo
+  → transaction
+      1. tạo bookings(PENDING_PAYMENT)
+      2. copy seat lock thành booking_seats
+      3. tạo booking_snacks/booking_promotions
+      4. set payment_expires_at
+      5. tạo QR payload
+  → member: trả booking
+  → guest: trả booking + guestAccessToken
 ```
 
-### 3.4 Step 4: Initiate Payment
+`POST /api/checkout` gộp confirm booking và initiate payment thành một request; các endpoint tách vẫn tồn tại và được frontend hiện tại sử dụng.
 
+### Booking detail security
+
+```text
+GET /api/bookings/{bookingId} (auth.optional)
+  → not found: 404
+  → admin hoặc booking.user_id == current user: 200
+  → guest capability token HMAC hợp lệ: 200
+  → còn lại: 403
 ```
+
+## 5. Payment flow
+
+### Initiate
+
+```text
 POST /api/payments/order
-  → PaymentController::initiatePayment()
-  → InitiatePaymentRequest validate: { bookingId, paymentMethod, amount }
-  → CheckoutService::initiatePayment():
-    1. Verify booking status = PENDING_PAYMENT
-    2. Tạo Payment record (status = PENDING)
-    3. Switch paymentMethod:
-       PAYPAL:
-         → ExchangeRateService::convertVndToUsd(amount)
-         → PayPalService::createOrder({ amount_usd, return_url, cancel_url })
-         → Gọi PayPal REST API → nhận orderId
-         → Payment.transaction_id = orderId
-         → Trả { paymentUrl: "https://paypal.com/..." }
-
-       MOMO:
-         → MomoService::createPayment({ amount_vnd, orderId, ... })
-         → Sign HMAC-SHA256
-         → Gọi Momo API → nhận payUrl
-         → Payment.transaction_id = requestId
-         → Trả { paymentUrl: "https://momo.vn/..." }
+  → optional JWT + throttle
+  → tìm booking
+  → xác minh owner/admin hoặc guest capability token
+  → bỏ qua authority của amount từ client
+  → lấy booking.final_price
+  → PAYPAL: convert VND → gateway currency, create order
+  → MOMO: sign create-order request, create order
+  → lưu Payment(PENDING) + transaction ID
+  → trả paymentUrl
 ```
 
-### 3.5 Step 5: Capture Payment
+### PayPal capture
 
+```text
+POST /api/payments/order/capture { transactionId, paymentMethod: PAYPAL }
+  → PayPalService::captureOrder
+  → verify order/capture status
+  → verify amount + currency với payment snapshot
+  → CheckoutLifecycleService::handleSuccessfulPayment
+      Payment → COMPLETED
+      Booking → CONFIRMED
+      ShowtimeSeat → BOOKED
+      deactivate/release lock
+      award loyalty once
+      gửi mail + notification
 ```
-POST /api/payments/order/capture (PayPal)
-  → PaymentController::capturePayment()
-  → ConfirmPaymentRequest validate: { transactionId, paymentMethod }
-  → CheckoutService::capturePayment():
-    1. Query Payment by transaction_id
-    2. PayPalService::captureOrder(orderId)
-       → Verify capture status = COMPLETED
-    3. Payment.status = COMPLETED, completed_at = now
-    4. Booking.status = CONFIRMED
-    5. ShowtimeSeat.seat_status = BOOKED (cho tất cả ghế)
-    6. Award loyalty points (nếu user authenticated)
-    7. Deactivate SeatLock
-    8. Trả PaymentResponse
 
-MoMo không được capture từ dữ liệu redirect của trình duyệt:
+### MoMo signed IPN
 
+```text
 POST /api/payments/momo/ipn
-  → Verify HMAC signature + amount + orderId
-  → Cập nhật payment/booking idempotently
+  → build canonical raw data
+  → verify HMAC-SHA256 bằng MOMO_SECRET_KEY
+  → tìm payment theo order/request ID
+  → verify amount trùng payment.amount
+  → xử lý resultCode idempotently
+  → lifecycle success/failure
 
 GET /api/payments/order/status?transactionId=...&paymentMethod=MOMO
-  → FE chỉ đọc trạng thái đã được IPN xác thực
+  → chỉ đọc persisted state cho frontend poll
 ```
 
-### 3.6 Refund
+`POST /payments/order/capture` với method MoMo là endpoint tương thích chỉ gọi verify/read; không tin dữ liệu redirect của browser và không tự capture.
 
-```
-POST /api/payments/{paymentId}/refund (Admin only)
-  → RefundController::refund()
-  → RefundRequest validate: { reason }
-  → RefundService::processRefund():
-    1. Verify payment status = COMPLETED
-    2. Switch method:
-       PAYPAL: → PayPalService::refund(captureId)
-       MOMO: → MomoService::refund(orderId)
-    3. Tạo Refund record
-    4. Payment.status = REFUNDED
-    5. Booking.status = REFUNDED, refunded = true
-    6. ShowtimeSeat.seat_status = AVAILABLE (restore ghế)
+### Refund
+
+```text
+POST /api/payments/{paymentId}/refund (admin)
+  → validate payment/refund eligibility
+  → PayPal hoặc MoMo refund API
+  → refunds record
+  → cập nhật payment/booking refund state
+  → trả ghế AVAILABLE khi refund hoàn tất
 ```
 
-### 3.7 Bảng tóm tắt Booking Flow
+## 6. Expiry và late payment
 
-| Step | API | Service Method | DB Changes |
-|------|-----|---------------|-----------|
-| Lock | `POST /seat-locks` | `BookingService::lockSeats()` | SeatLock, SeatLockSeat, ShowtimeSeat→LOCKED |
-| Preview | `POST /bookings/price-preview` | `BookingService::previewPrice()` | Read-only |
-| Confirm | `POST /bookings/confirm` | `BookingService::confirmBooking()` | Booking, BookingSeat, BookingSnack, BookingPromotion |
-| Pay Init | `POST /payments/order` | `CheckoutService::initiatePayment()` | Payment(PENDING), call gateway |
-| Pay Capture | `POST /payments/order/capture` | `CheckoutService::capturePayment()` | Payment→COMPLETED, Booking→CONFIRMED, Seats→BOOKED |
-| Refund | `POST /payments/{id}/refund` | `RefundService::processRefund()` | Refund, Payment→REFUNDED, Booking→REFUNDED, Seats→AVAILABLE |
+Scheduler chạy `locks:cleanup-expired` mỗi phút:
 
-## 4. Pricing Flow
+- lock hết hạn → inactive/xóa theo command, release Redis, ghế về `AVAILABLE`;
+- booking `PENDING_PAYMENT` quá `payment_expires_at` → `EXPIRED`, giải phóng ghế.
 
-```
-Admin tạo PriceBase (giá gốc, ví dụ: 90.000 VND)
-Admin tạo PriceModifiers:
-  - { conditionType: "DAY_OF_WEEK", conditionValue: "WEEKEND", modifierType: "PERCENTAGE", modifierValue: 20 }
-  - { conditionType: "SEAT_TYPE", conditionValue: "VIP", modifierType: "FIXED_AMOUNT", modifierValue: 30000 }
-  - { conditionType: "SHOWTIME_FORMAT", conditionValue: "3D", modifierType: "FIXED_AMOUNT", modifierValue: 20000 }
+Nếu payment về muộn:
 
-Khi tạo showtime (hoặc recalculate):
-  → PriceCalculationService::calculatePrice(showtime, seat):
-    base = 90000 (PriceBase active)
-    IF weekend → +20% → 108000
-    IF VIP seat → +30000 → 138000
-    IF 3D format → +20000 → 158000
-    → Lưu vào showtime_seats.price = 158000
-    → Lưu showtime_seats.price_breakdown = JSON { base, modifiers: [...] }
-```
+- lifecycle thử bảo toàn tính nhất quán;
+- nếu ghế vẫn lấy lại được, có thể xác nhận theo policy;
+- nếu ghế đã được booking khác chiếm, không double-book và kích hoạt automatic refund.
 
-## 5. Momo IPN Flow
+## 7. Review flow
 
-```
-Momo gọi callback:
-  POST /api/payments/momo/ipn
-  → PaymentController::handleMomoIpnPost()
-  → Verify HMAC signature
-  → resultCode == 0 → success
-  → Update payment + booking status
-  → Trả 204 No Content
+```text
+GET /movies/{id}/reviews (auth.optional)
+  → published reviews + reply tree + reaction state
+  → summary/distribution + pagination
 
-FE cũng gọi capture riêng (Momo redirect về FE):
-  POST /api/payments/order/capture
-  → Verify lại với Momo API
+POST review/reaction/reply/report
+  → optional JWT + IP/user identity + throttle
+  → validate ownership/rate/duplicate constraints
+  → reply có thể tạo notification cho tác giả review
+
+Admin moderation
+  → GET /movies/reviews/moderation
+  → PATCH /movies/reviews/{id}/moderate
+  → cập nhật status + ghi review_moderation_logs
 ```
 
-## 6. Seat Lock Expiry
+## 8. Loyalty và notifications
 
+```text
+Booking confirmed
+  → award loyalty đúng một lần
+  → cập nhật users.loyalty_points
+  → ghi loyalty_transactions với balance_after/source
+  → Laravel database notification BookingConfirmed
+
+Điểm bị điều chỉnh/refund
+  → transaction cộng/trừ tương ứng
+  → notification LoyaltyPointsChanged
 ```
-SeatLock TTL = 10 phút (config/booking.php)
 
-Khi lock expired:
-  → BookingService kiểm tra expires_at < now
-  → SeatLock.active = false
-  → ShowtimeSeat.seat_status = AVAILABLE (restore)
+Notification dùng Laravel database notifications. API hiện là request/poll; backend chưa cấu hình broadcast/WebSocket channel.
 
-Khi payment timeout (15 phút):
-  → Booking.payment_expires_at < now
-  → Booking.status = EXPIRED
-  → ShowtimeSeat.seat_status = AVAILABLE
+## 9. Showtime search
+
+```text
+GET /api/showtimes/search
+  → validate q/date/city/cinemaId/format/from/to/minSeats/page/perPage
+  → lọc suất active/tương lai theo cinema timezone
+  → aggregate available seats + minimum price
+  → paginate item có movie/cinema/room/showtime
+
+GET /api/showtimes/options
+  → formats + cities đang có trong suất tương lai
 ```
+
+Timezone nghiệp vụ lấy từ `config/cinema.php`, mặc định `Asia/Ho_Chi_Minh`.
+
+## 10. Contact và assets
+
+- `POST /contact/submissions` validate + throttle, lưu source/IP/user-agent/attachment URL và gửi mail nếu bật.
+- Cloudinary upload diễn ra ở frontend; backend chỉ lưu URL/public ID cho movie, cinema, snack, avatar, hero slide và review media.
+
+Chi tiết route xem [API_SPEC.md](./API_SPEC.md); schema xem [DATABASE.md](./DATABASE.md).

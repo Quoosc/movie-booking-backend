@@ -1,395 +1,307 @@
-# API_SPEC.md — Chi tiết API Endpoints
+# API Specification
 
-## Base URL
+> Cập nhật từ `php artisan route:list --json` và controller/request ngày 2026-08-09.
 
-- **Dev**: `http://localhost:8000/api`
-- **Prefix**: Tất cả routes trong `routes/api.php` tự động có prefix `/api`
+## 1. Tổng quan
 
-## Response Format
+- Local base URL: `http://localhost:8000/api`.
+- Docker compose publish backend tại `http://localhost:8080/api`.
+- Route snapshot: 152 tổng, 146 dưới `/api`.
+- 95 API routes dùng `auth.jwt`, 75 dùng `role:admin`, 7 dùng `auth.optional`.
+- Google OAuth dùng web routes, không có prefix `/api`.
+
+## 2. Response và access
+
+Response phổ biến:
 
 ```json
 {
   "code": 200,
-  "message": "Success",
-  "data": { ... }
+  "message": "OK",
+  "data": {}
 }
 ```
 
-Error response:
+Một số controller booking/payment trả object/array trực tiếp. Client phải coi HTTP status là nguồn chính và chỉ unwrap `data` khi field tồn tại.
+
+| Access | Yêu cầu |
+|---|---|
+| Public | Không có auth middleware |
+| JWT | `Authorization: Bearer <accessToken>` |
+| Optional | `auth.optional`; user được resolve nếu token hợp lệ |
+| Admin | `auth.jwt` + `role:admin` |
+| Guest session | `X-Session-Id` cho lock/preview/confirm |
+| Guest booking | `X-Booking-Access-Token` cho detail/payment của guest |
+
+## 3. Route inventory theo domain
+
+### Auth — 5 routes
+
+| Method | URI | Access | Ghi chú |
+|---|---|---|---|
+| `POST` | `/auth/register` | Public, `5/min` | Đăng ký |
+| `POST` | `/auth/login` | Public, `10/min` | Access + refresh token |
+| `POST` | `/auth/logout` | Refresh token/cookie | Thu hồi phiên hiện tại |
+| `POST` | `/auth/logout-all` | JWT | Thu hồi mọi phiên của current user |
+| `GET/POST` | `/auth/refresh` | Refresh token/cookie, `30/min` | Rotate refresh token |
+
+Payload chính:
+
+```json
+// register
+{ "email": "...", "username": "...", "phoneNumber": "...", "password": "...", "confirmPassword": "..." }
+
+// login
+{ "email": "...", "password": "..." }
+```
+
+### Users — 9 routes
+
+| Method | URI | Access |
+|---|---|---|
+| `GET/PUT` | `/users/profile` | JWT |
+| `PATCH` | `/users/password` | JWT |
+| `GET` | `/users/loyalty` | JWT |
+| `GET` | `/users/loyalty/transactions` | JWT |
+| `GET` | `/users` | Admin |
+| `GET` | `/users/{userId}` | Admin |
+| `PATCH` | `/users/{userId}/role` | Admin; body text role |
+| `DELETE` | `/users/{userId}` | Admin |
+
+### Membership tiers — 8 routes
+
+Mọi GET hiện nằm trong `auth.jwt`; mutation thêm `role:admin`.
+
+| Method | URI | Access |
+|---|---|---|
+| `GET` | `/membership-tiers`, `/active`, `/name/{name}`, `/{id}` | JWT |
+| `POST` | `/membership-tiers` | Admin |
+| `PUT` | `/membership-tiers/{id}` | Admin |
+| `PATCH` | `/membership-tiers/{id}/deactivate` | Admin |
+| `DELETE` | `/membership-tiers/{id}` | Admin |
+
+### Movies và reviews — 19 routes
+
+| Method | URI | Access |
+|---|---|---|
+| `GET` | `/movies` | Public; query `title`, `genre`, `status` |
+| `GET` | `/movies/search/title?title=` | Public |
+| `GET` | `/movies/filter/status?status=` | Public |
+| `GET` | `/movies/filter/genre?genre=` | Public |
+| `GET` | `/movies/{movieId}` | Public |
+| `GET` | `/movies/{movieId}/related` | Public |
+| `GET` | `/movies/{movieId}/showtimes?date=` | Public |
+| `POST/PUT/DELETE` | `/movies`, `/movies/{movieId}` | Admin |
+| `GET` | `/movies/{movieId}/reviews` | Optional |
+| `POST` | `/movies/{movieId}/reviews` | Optional, `10/min` |
+| `PUT/DELETE` | `/movies/{movieId}/reviews/{reviewId}` | JWT owner/policy |
+| `POST` | `.../{reviewId}/react` | Optional, `30/min` |
+| `POST` | `.../{reviewId}/reply` | Optional, `10/min` |
+| `POST` | `.../{reviewId}/report` | Optional, `5/min` |
+| `GET` | `/movies/reviews/moderation` | Admin |
+| `PATCH` | `/movies/reviews/{reviewId}/moderate` | Admin |
+
+Review index nhận filter/sort/pagination và trả `items`, `summary`, `pagination`. Mutation phải tuân validation rating/comment/media/spoiler/reaction/report của controller.
+
+### Cinemas, rooms và snacks — 18 routes
+
+| Method | URI | Access |
+|---|---|---|
+| `GET` | `/cinemas`, `/cinemas/{cinemaId}` | Public |
+| `GET` | `/cinemas/{cinemaId}/movies` | Public |
+| `GET` | `/cinemas/{cinemaId}/snacks` | Public |
+| `GET` | `/cinemas/snacks?cinemaId=` | Public |
+| `POST/PUT/DELETE` | `/cinemas`, `/cinemas/{cinemaId}` | Admin |
+| `GET/POST` | `/cinemas/rooms` | Admin |
+| `GET/PUT/DELETE` | `/cinemas/rooms/{roomId}` | Admin |
+| `GET` | `/cinemas/snacks/all` | Admin |
+| `GET` | `/cinemas/snacks/{snackId}` | Admin |
+| `POST` | `/cinemas/snacks` | Admin |
+| `PUT/DELETE` | `/cinemas/snacks/{snackId}` | Admin |
+
+### Showtimes — 17 routes
+
+Public showtime:
+
+| Method | URI | Ghi chú |
+|---|---|---|
+| `GET` | `/showtimes` | List |
+| `GET` | `/showtimes/search` | Global filtered search |
+| `GET` | `/showtimes/options` | Formats/cities |
+| `GET` | `/showtimes/{showtimeId}` | Detail |
+| `GET` | `/showtimes/movie/{movieId}` | Theo phim |
+| `GET` | `/showtimes/movie/{movieId}/upcoming` | Suất tương lai |
+| `GET` | `/showtimes/movie/{movieId}/date-range` | `startDate`, `endDate` |
+| `GET` | `/showtimes/room/{roomId}` | Theo phòng |
+
+`/showtimes/search` query: `q`, `date`, `city`, `cinemaId`, `format`, `from`, `to`, `minSeats`, `page`, `perPage`.
+
+Admin showtime:
+
+| Method | URI |
+|---|---|
+| `POST` | `/showtimes` |
+| `PUT/DELETE` | `/showtimes/{showtimeId}` |
+| `PATCH` | `/showtimes/{showtimeId}/toggle-active` |
+| `GET/POST/PUT` | `/showtimes/{showtimeId}/ticket-types` |
+| `POST/DELETE` | `/showtimes/{showtimeId}/ticket-types/{ticketTypeId}` |
+
+### Seats — 9 routes; showtime seats — 6 routes
+
+| Method | URI | Access |
+|---|---|---|
+| `GET` | `/seats/layout?showtime_id=` | Public |
+| `GET/POST` | `/seats` | Admin |
+| `GET/PUT/DELETE` | `/seats/{seatId}` | Admin |
+| `GET` | `/seats/room/{roomId}` | Admin |
+| `POST` | `/seats/generate` | Admin |
+| `GET` | `/seats/row-labels?rows=` | Admin |
+| `GET` | `/showtime-seats/showtime/{showtimeId}` | Admin |
+| `GET` | `/showtime-seats/showtime/{showtimeId}/available` | Admin |
+| `POST` | `/showtime-seats/showtime/{showtimeId}/recalculate-prices` | Admin |
+| `GET/PUT` | `/showtime-seats/{id}` | Admin |
+| `PUT` | `/showtime-seats/{id}/reset` | Admin |
+
+### Ticket types — 5 routes
+
+| Method | URI | Access |
+|---|---|---|
+| `GET` | `/ticket-types?showtimeId=&userId=` | Public |
+| `GET` | `/ticket-types/admin` | Admin |
+| `POST` | `/ticket-types` | Admin |
+| `PUT/DELETE` | `/ticket-types/{id}` | Admin |
+
+### Seat locks — 3 routes
+
+| Method | URI | Context |
+|---|---|---|
+| `POST` | `/seat-locks` | JWT hoặc `X-Session-Id` |
+| `GET` | `/seat-locks/availability/{showtimeId}` | JWT hoặc session |
+| `DELETE` | `/seat-locks/showtime/{showtimeId}` | JWT hoặc session |
+
+Lock payload:
+
 ```json
 {
-  "code": 422,
-  "message": "Validation Error",
-  "errors": { "field": ["error message"] }
+  "showtimeId": "uuid",
+  "seats": [{ "showtimeSeatId": "uuid", "ticketTypeId": "uuid" }]
 }
 ```
 
----
+### Bookings — 5 routes; checkout — 1 route
 
-## 1. Auth (`/api/auth`)
+| Method | URI | Access |
+|---|---|---|
+| `POST` | `/bookings/price-preview` | Session context |
+| `POST` | `/bookings/confirm` | Session context |
+| `GET` | `/bookings/my-bookings` | JWT |
+| `GET` | `/bookings/{bookingId}` | Optional JWT + owner/admin/capability check |
+| `PATCH` | `/bookings/{bookingId}/qr` | JWT |
+| `POST` | `/checkout` | Session context; confirm + initiate |
 
-| Method | Endpoint | Auth | Controller Method | Ghi chú |
-|--------|----------|------|-------------------|---------|
-| POST | `/auth/register` | ❌ | `AuthController::register` | |
-| POST | `/auth/login` | ❌ | `AuthController::login` | |
-| POST | `/auth/logout` | Refresh token/cookie | `AuthController::logout` | Thu hồi phiên hiện tại |
-| POST | `/auth/logout-all` | ✅ JWT | `AuthController::logoutAll` | Chỉ xóa các phiên của current user |
-| POST | `/auth/refresh` | Refresh token/cookie | `AuthController::refresh` | Rotate refresh token và trả accessToken mới |
+Preview:
 
-### Request/Response
-
-```php
-// POST /auth/register
-Request: { email, username, phoneNumber, password, confirmPassword }
-Response: { code, data: { accessToken, refreshToken, user } }
-
-// POST /auth/login
-Request: { email, password }
-Response: { accessToken, refreshToken, user: { userId, email, role, username, ... } }
+```json
+{ "lockId": "uuid", "promotionCode": null, "snacks": [{ "snackId": "uuid", "quantity": 1 }] }
 ```
 
----
+Confirm:
 
-## 2. Movies (`/api/movies`)
-
-| Method | Endpoint | Auth | Controller Method | Ghi chú |
-|--------|----------|------|-------------------|---------|
-| GET | `/movies` | ❌ | `MovieController::index` | + query: title, genre, status |
-| GET | `/movies/search/title?title=` | ❌ | `MovieController::searchByTitle` | |
-| GET | `/movies/filter/status?status=` | ❌ | `MovieController::filterByStatus` | SHOWING / UPCOMING |
-| GET | `/movies/filter/genre?genre=` | ❌ | `MovieController::filterByGenre` | |
-| GET | `/movies/{movieId}` | ❌ | `MovieController::show` | |
-| GET | `/movies/{movieId}/showtimes?date=` | ❌ | `MovieController::showtimesByDate` | YYYY-MM-DD |
-| POST | `/movies` | ✅ JWT | `MovieController::store` | Admin |
-| PUT | `/movies/{movieId}` | ✅ JWT | `MovieController::update` | Admin |
-| DELETE | `/movies/{movieId}` | ✅ JWT | `MovieController::destroy` | Admin |
-
-### Resource: `MovieResource`
-
-```php
-// MovieResource fields
-movieId, title, genre, description, duration, minimumAge,
-director, actors, posterUrl, posterCloudinaryId, trailerUrl,
-status, language, createdAt, updatedAt
+```json
+{
+  "lockId": "uuid",
+  "promotionCode": null,
+  "snackCombos": [{ "snackId": "uuid", "quantity": 1 }],
+  "guestInfo": { "email": "...", "username": "...", "phoneNumber": "..." }
+}
 ```
 
----
-
-## 3. Cinemas (`/api/cinemas`)
-
-### Public
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/cinemas` | ❌ | `CinemaController::index` |
-| GET | `/cinemas/{cinemaId}` | ❌ | `CinemaController::show` |
-| GET | `/cinemas/{cinemaId}/movies?status=` | ❌ | `CinemaController::moviesByCinema` |
-| GET | `/cinemas/snacks?cinemaId=` | ❌ | `CinemaController::getSnacks` |
-| GET | `/cinemas/{cinemaId}/snacks` | ❌ | `CinemaController::getSnacksByCinema` |
-
-### Admin (auth.jwt + role:admin)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| POST | `/cinemas` | ✅ | `CinemaController::store` |
-| PUT | `/cinemas/{cinemaId}` | ✅ | `CinemaController::update` |
-| DELETE | `/cinemas/{cinemaId}` | ✅ | `CinemaController::destroy` |
-
-### Rooms (auth.jwt + role:admin)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/cinemas/rooms` | ✅ | `CinemaController::roomsIndex` |
-| GET | `/cinemas/rooms/{roomId}` | ✅ | `CinemaController::showRoom` |
-| POST | `/cinemas/rooms` | ✅ | `CinemaController::storeRoom` |
-| PUT | `/cinemas/rooms/{roomId}` | ✅ | `CinemaController::updateRoom` |
-| DELETE | `/cinemas/rooms/{roomId}` | ✅ | `CinemaController::destroyRoom` |
-
-### Snacks Admin (auth.jwt + role:admin)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/cinemas/snacks/all` | ✅ | `CinemaController::getAllSnacks` |
-| GET | `/cinemas/snacks/{snackId}` | ✅ | `CinemaController::getSnack` |
-| POST | `/cinemas/snacks` | ✅ | `CinemaController::storeSnack` |
-| PUT | `/cinemas/snacks/{snackId}` | ✅ | `CinemaController::updateSnack` |
-| DELETE | `/cinemas/snacks/{snackId}` | ✅ | `CinemaController::deleteSnack` |
-
----
-
-## 4. Showtimes (`/api/showtimes`)
-
-### Public
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/showtimes` | ❌ | `ShowtimeController::index` |
-| GET | `/showtimes/{showtimeId}` | ❌ | `ShowtimeController::show` |
-| GET | `/showtimes/movie/{movieId}` | ❌ | `ShowtimeController::byMovie` |
-| GET | `/showtimes/movie/{movieId}/upcoming` | ❌ | `ShowtimeController::upcomingByMovie` |
-| GET | `/showtimes/movie/{movieId}/date-range?startDate=&endDate=` | ❌ | `ShowtimeController::byMovieAndDateRange` |
-| GET | `/showtimes/room/{roomId}` | ❌ | `ShowtimeController::byRoom` |
+Guest response có `guestAccessToken`. `GET /bookings/{id}` không phải public-by-ID: guest bắt buộc gửi token ở `X-Booking-Access-Token`.
 
-### Admin (auth.jwt + role:admin)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| POST | `/showtimes` | ✅ | `ShowtimeController::store` |
-| PUT | `/showtimes/{showtimeId}` | ✅ | `ShowtimeController::update` |
-| DELETE | `/showtimes/{showtimeId}` | ✅ | `ShowtimeController::destroy` |
-
-### Showtime Ticket Types (auth.jwt + role:admin)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/showtimes/{id}/ticket-types` | ✅ | `ShowtimeTicketTypeController::index` |
-| POST | `/showtimes/{id}/ticket-types` | ✅ | `::assignMultiple` |
-| POST | `/showtimes/{id}/ticket-types/{ticketTypeId}` | ✅ | `::assignSingle` |
-| PUT | `/showtimes/{id}/ticket-types` | ✅ | `::replace` |
-| DELETE | `/showtimes/{id}/ticket-types/{ticketTypeId}` | ✅ | `::remove` |
-
----
-
-## 5. Seats (`/api/seats`)
-
-### Public
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/seats/layout?showtime_id=` | ❌ | `SeatController::layout` |
-
-### Admin (auth.jwt + role:admin)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/seats` | ✅ | `SeatController::index` |
-| GET | `/seats/{seatId}` | ✅ | `SeatController::show` |
-| POST | `/seats` | ✅ | `SeatController::store` |
-| PUT | `/seats/{seatId}` | ✅ | `SeatController::update` |
-| DELETE | `/seats/{seatId}` | ✅ | `SeatController::destroy` |
-| GET | `/seats/room/{roomId}` | ✅ | `SeatController::getByRoom` |
-| POST | `/seats/generate` | ✅ | `SeatController::generate` |
-| GET | `/seats/row-labels?rows=` | ✅ | `SeatController::rowLabels` |
-
-### Showtime Seats (auth.jwt + role:admin)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/showtime-seats/{id}` | ✅ | `ShowtimeSeatController::getById` |
-| GET | `/showtime-seats/showtime/{showtimeId}` | ✅ | `::getByShowtime` |
-| GET | `/showtime-seats/showtime/{id}/available` | ✅ | `::getAvailableByShowtime` |
-| PUT | `/showtime-seats/{id}` | ✅ | `::update` |
-| PUT | `/showtime-seats/{id}/reset` | ✅ | `::reset` |
-| POST | `/showtime-seats/showtime/{id}/recalculate-prices` | ✅ | `::recalculatePrices` |
-
----
-
-## 6. Ticket Types (`/api/ticket-types`)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/ticket-types?showtimeId=&userId=` | ❌ | `TicketTypeController::index` |
-| GET | `/ticket-types/admin` | ✅ | `TicketTypeController::adminIndex` |
-| POST | `/ticket-types` | ✅ | `TicketTypeController::store` |
-| PUT | `/ticket-types/{id}` | ✅ | `TicketTypeController::update` |
-| DELETE | `/ticket-types/{id}` | ✅ | `TicketTypeController::destroy` |
-
----
-
-## 7. Promotions (`/api/promotions`)
-
-### Public
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/promotions?filter=` | ❌ | `PromotionController::index` |
-| GET | `/promotions/active` | ❌ | `PromotionController::getActive` |
-| GET | `/promotions/valid` | ❌ | `PromotionController::getValid` |
-| GET | `/promotions/code/{code}` | ❌ | `PromotionController::showByCode` |
-| GET | `/promotions/{promotionId}` | ❌ | `PromotionController::show` |
-
-### Admin (auth.jwt + role:admin)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| POST | `/promotions` | ✅ | `PromotionController::store` |
-| PUT | `/promotions/{id}` | ✅ | `PromotionController::update` |
-| PATCH | `/promotions/{id}/deactivate` | ✅ | `PromotionController::deactivate` |
-| DELETE | `/promotions/{id}` | ✅ | `PromotionController::destroy` |
-
----
-
-## 8. Seat Locks (`/api/seat-locks`)
-
-| Method | Endpoint | Auth | Controller Method | Ghi chú |
-|--------|----------|------|-------------------|---------|
-| POST | `/seat-locks` | Guest/JWT | `SeatLockController::lockSeats` | X-Session-Id cho guest |
-| GET | `/seat-locks/availability/{showtimeId}` | Guest/JWT | `::checkAvailability` | |
-| DELETE | `/seat-locks/showtime/{showtimeId}` | Guest/JWT | `::releaseSeats` | |
-
-### Form Request: `LockSeatsRequest`
-
-```php
-[
-  'showtimeId' => 'required|uuid',
-  'seats' => 'required|array|min:1',
-  'seats.*.showtimeSeatId' => 'required|uuid',
-  'seats.*.ticketTypeId' => 'required|uuid',
-]
-```
-
----
-
-## 9. Bookings (`/api/bookings`)
-
-| Method | Endpoint | Auth | Controller Method | Ghi chú |
-|--------|----------|------|-------------------|---------|
-| POST | `/bookings/price-preview` | Guest/JWT | `BookingController::pricePreview` | |
-| POST | `/bookings/confirm` | Guest/JWT | `BookingController::confirmBooking` | |
-| GET | `/bookings/my-bookings` | ✅ JWT | `BookingController::getUserBookings` | |
-| GET | `/bookings/{bookingId}` | Optional | `BookingController::showBookingPublic` | auth.optional |
-| PATCH | `/bookings/{bookingId}/qr` | ✅ JWT | `BookingController::updateQrCode` | |
-
-### Form Requests
-
-```php
-// PricePreviewRequest
-[
-  'lockId' => 'required|uuid',
-  'snacks' => 'nullable|array',
-  'snacks.*.snackId' => 'required|uuid',
-  'snacks.*.quantity' => 'required|integer|min:1',
-  'promotionCode' => 'nullable|string',
-]
-
-// ConfirmBookingRequest
-[
-  'lockId' => 'required|uuid',
-  'promotionCode' => 'nullable|string',
-  'snackCombos' => 'nullable|array',
-  'snackCombos.*.snackId' => 'required|uuid',
-  'snackCombos.*.quantity' => 'required|integer|min:1',
-  'guestInfo' => 'nullable|array',
-  'guestInfo.email' => 'required_with:guestInfo|email',
-  'guestInfo.username' => 'required_with:guestInfo|string',
-  'guestInfo.phoneNumber' => 'required_with:guestInfo|string',
-]
-```
-
----
-
-## 10. Checkout (`/api/checkout`)
-
-| Method | Endpoint | Auth | Controller Method | Ghi chú |
-|--------|----------|------|-------------------|---------|
-| POST | `/checkout` | Guest/JWT | `CheckoutController::confirmAndInitiate` | Confirm + payment 1 bước |
-
----
-
-## 11. Payments (`/api/payments`)
-
-| Method | Endpoint | Auth | Controller Method | Ghi chú |
-|--------|----------|------|-------------------|---------|
-| POST | `/payments/order` | Guest/JWT | `PaymentController::initiatePayment` | Public |
-| POST | `/payments/order/capture` | Guest/JWT | `PaymentController::capturePayment` | Public |
-| GET | `/payments/order/status?transactionId=&paymentMethod=MOMO` | Guest/JWT | `PaymentController::paymentStatus` | Đọc trạng thái MoMo đã xác thực qua IPN |
-| GET | `/payments/momo/ipn` | ❌ | `PaymentController::handleMomoIpnGet` | Momo callback |
-| POST | `/payments/momo/ipn` | ❌ | `PaymentController::handleMomoIpnPost` | Momo IPN |
-| GET | `/payments/search?...` | ✅ JWT | `PaymentController::searchPayments` | query params |
-| POST | `/payments/{paymentId}/refund` | ✅ Admin | `RefundController::refund` | role:admin |
-
-### Form Requests
-
-```php
-// InitiatePaymentRequest
-[
-  'bookingId' => 'required|uuid',
-  'paymentMethod' => 'required|in:PAYPAL,MOMO',
-  'amount' => 'required|numeric|min:1',
-]
-
-// ConfirmPaymentRequest
-[
-  'transactionId' => 'required|string',
-  'paymentMethod' => 'required|in:PAYPAL,MOMO',
-]
-
-// PaymentSearchRequest
-[
-  'bookingId' => 'nullable|uuid',
-  'userId' => 'nullable|uuid',
-  'status' => 'nullable|in:PENDING,COMPLETED,FAILED,REFUNDED,CANCELLED',
-  'method' => 'nullable|in:PAYPAL,MOMO',
-  'startDate' => 'nullable|date',
-  'endDate' => 'nullable|date',
-]
-```
-
----
-
-## 12. Users (`/api/users`) — auth.jwt
-
-| Method | Endpoint | Auth | Controller Method | Ghi chú |
-|--------|----------|------|-------------------|---------|
-| GET | `/users/profile` | ✅ | `UsersController::getProfile` | |
-| PUT | `/users/profile` | ✅ | `UsersController::updateProfile` | |
-| PATCH | `/users/password` | ✅ | `UsersController::updatePassword` | |
-| GET | `/users/loyalty` | ✅ | `UsersController::getLoyalty` | |
-| GET | `/users` | ✅ | `UsersController::listAllUsers` | Admin |
-| GET | `/users/{userId}` | ✅ | `UsersController::getUserById` | Admin |
-| PATCH | `/users/{userId}/role` | ✅ | `UsersController::updateUserRole` | Admin, body: text/plain |
-| DELETE | `/users/{userId}` | ✅ | `UsersController::deleteUser` | Admin |
-
----
-
-## 13. Membership Tiers (`/api/membership-tiers`) — auth.jwt
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/membership-tiers` | ✅ | `MembershipTierController::index` |
-| GET | `/membership-tiers/active` | ✅ | `::getActive` |
-| GET | `/membership-tiers/name/{name}` | ✅ | `::getByName` |
-| GET | `/membership-tiers/{id}` | ✅ | `::show` |
-| POST | `/membership-tiers` | ✅ | `::store` |
-| PUT | `/membership-tiers/{id}` | ✅ | `::update` |
-| PATCH | `/membership-tiers/{id}/deactivate` | ✅ | `::deactivate` |
-| DELETE | `/membership-tiers/{id}` | ✅ | `::destroy` |
-
----
-
-## 14. Pricing — auth.jwt
-
-### Price Base (`/api/price-base`)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/price-base` | ✅ | `PriceBaseController::index` |
-| GET | `/price-base/active` | ✅ | `::getActive` |
-| GET | `/price-base/{id}` | ✅ | `::show` |
-| POST | `/price-base` | ✅ | `::store` |
-| PUT | `/price-base/{id}` | ✅ | `::update` |
-| DELETE | `/price-base/{id}` | ✅ | `::destroy` |
-
-### Price Modifiers (`/api/price-modifiers`)
-
-| Method | Endpoint | Auth | Controller Method |
-|--------|----------|------|-------------------|
-| GET | `/price-modifiers` | ✅ | `PriceModifierController::index` |
-| GET | `/price-modifiers/active` | ✅ | `::getActive` |
-| GET | `/price-modifiers/by-condition?conditionType=` | ✅ | `::getByCondition` |
-| GET | `/price-modifiers/{id}` | ✅ | `::show` |
-| POST | `/price-modifiers` | ✅ | `::store` |
-| PUT | `/price-modifiers/{id}` | ✅ | `::update` |
-| DELETE | `/price-modifiers/{id}` | ✅ | `::destroy` |
-
----
-
-## Legend
-
-| Icon | Nghĩa |
-|------|-------|
-| ❌ | Public endpoint (không cần auth) |
-| ✅ JWT | Cần `Authorization: Bearer <token>` |
-| ✅ Admin | Cần JWT + role ADMIN (`auth.jwt` + `role:admin`) |
-| Guest/JWT | Chấp nhận `X-Session-Id` header (guest) hoặc JWT (member) |
-| Optional | `auth.optional` — JWT nếu có, guest vẫn cho phép |
+### Payments — 7 routes
+
+| Method | URI | Access | Contract |
+|---|---|---|---|
+| `POST` | `/payments/order` | Optional JWT, owner/capability, `20/min` | `{ bookingId, paymentMethod, amount? }` |
+| `POST` | `/payments/order/capture` | Public, `30/min` | `{ transactionId, paymentMethod }` |
+| `GET` | `/payments/order/status` | Public, `60/min` | Chỉ method `MOMO` |
+| `GET/POST` | `/payments/momo/ipn` | Gateway callback | Verify signature/amount/order |
+| `GET` | `/payments/search` | JWT | Admin toàn bộ; user chỉ dữ liệu của mình |
+| `POST` | `/payments/{paymentId}/refund` | Admin | `{ reason }` |
+
+Quy tắc an toàn:
+
+- backend luôn dùng `booking.final_price`, không tin `amount` client;
+- PayPal capture phải verify amount/currency;
+- MoMo success chỉ được ghi từ IPN có chữ ký hợp lệ;
+- callback/status phải idempotent.
+
+### Promotions — 9 routes
+
+| Method | URI | Access |
+|---|---|---|
+| `GET` | `/promotions`, `/active`, `/valid`, `/code/{code}`, `/{promotionId}` | Public |
+| `POST` | `/promotions` | Admin |
+| `PUT` | `/promotions/{promotionId}` | Admin |
+| `PATCH` | `/promotions/{promotionId}/deactivate` | Admin |
+| `DELETE` | `/promotions/{promotionId}` | Admin |
+
+### Price base — 6; price modifiers — 7
+
+Tất cả admin:
+
+- `/price-base`, `/price-base/active`, `/price-base/{id}` với GET/POST/PUT/DELETE phù hợp;
+- `/price-modifiers`, `/active`, `/by-condition`, `/{id}` với GET/POST/PUT/DELETE phù hợp.
+
+### Hero slides — 6 routes
+
+| Method | URI | Access |
+|---|---|---|
+| `GET` | `/hero-slides`, `/hero-slides/{heroSlideId}` | Public |
+| `GET` | `/hero-slides/admin` | Admin |
+| `POST` | `/hero-slides` | Admin |
+| `PUT/DELETE` | `/hero-slides/{heroSlideId}` | Admin |
+
+### Notifications — 5 routes
+
+Tất cả JWT:
+
+- `GET /notifications`
+- `GET /notifications/unread-count`
+- `PATCH /notifications/read-all`
+- `PATCH /notifications/{notificationId}/read`
+- `DELETE /notifications/{notificationId}`
+
+### Contact — 1 route
+
+`POST /contact/submissions` là public và throttle `8/min`.
+
+## 4. Web routes
+
+| Method | URI | Mô tả |
+|---|---|---|
+| `GET` | `/oauth2/authorization/google` | Bắt đầu Google OAuth |
+| `GET` | `/login/oauth2/code/google` | Google callback |
+| `GET` | `/up` | Health endpoint Laravel |
+
+## 5. Status và HTTP semantics
+
+| Domain | Values |
+|---|---|
+| Booking DB | `PENDING_PAYMENT`, `CONFIRMED`, `CANCELLED`, `EXPIRED` |
+| Payment | `PENDING`, `COMPLETED`, `FAILED`, `CANCELLED`, `REFUND_PENDING`, `REFUNDED` |
+| Seat | `AVAILABLE`, `LOCKED`, `BOOKED` |
+| Movie | `SHOWING`, `UPCOMING` |
+| Payment method | `PAYPAL`, `MOMO` |
+
+HTTP status đáng chú ý:
+
+- `401`: thiếu/sai/hết hạn JWT;
+- `403`: sai role/ownership/capability;
+- `404`: resource không tồn tại;
+- `409`: seat/resource conflict;
+- `410`: lock hết hạn;
+- `422`: validation;
+- `429`: throttle.
+
+Chi tiết luồng tin cậy và transaction xem [FLOW.md](./FLOW.md).

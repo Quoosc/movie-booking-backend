@@ -1,365 +1,227 @@
-# DATABASE.md — Sơ đồ Database & Chi tiết bảng
+# Database và quan hệ dữ liệu
 
-## Tổng quan
+> Cập nhật theo 47 migrations và schema MySQL dev ngày 2026-08-09.
 
-- **Database Engine**: MySQL 8.0+ (Laragon)
-- **Database Name**: `movie_booking_laravel`
-- **Primary Keys**: Tất cả dùng **UUID** (char(36))
-- **Timestamps**: Đa số bảng có `created_at`, `updated_at`
-- **Tổng số tables**: 23
+## 1. Tổng quan
 
----
+| Thuộc tính | Giá trị hiện tại |
+|---|---|
+| Engine dev | MySQL 8.x / InnoDB |
+| Database | `movie_booking_laravel` |
+| Collation chính | `utf8mb4_unicode_ci` |
+| Bảng trong DB dev | 35, gồm bảng `migrations` và bảng hạ tầng |
+| Bảng được tạo trực tiếp bởi migration | 34 |
+| Primary key nghiệp vụ | Chủ yếu UUID `char(36)`; `review_reactions.id` là bigint |
 
-## 1. Entity Relationship (Text)
+Con số “23 bảng” trong tài liệu cũ không còn đúng. Schema hiện đã bổ sung hero/contact, review ecosystem, loyalty transactions và notifications.
 
+## 2. Danh mục 35 bảng
+
+| Nhóm | Bảng |
+|---|---|
+| Identity/membership | `users`, `refresh_tokens`, `membership_tiers`, `loyalty_transactions`, `notifications` |
+| Movie/community/content | `movies`, `movie_reviews`, `review_reactions`, `review_reports`, `review_moderation_logs`, `hero_slides`, `contact_submissions` |
+| Cinema/showtime | `cinemas`, `rooms`, `seats`, `showtimes`, `showtime_seats`, `showtime_ticket_types` |
+| Pricing/catalog | `ticket_types`, `price_base`, `price_modifiers`, `promotions`, `snacks` |
+| Booking/payment | `seat_locks`, `seat_lock_seats`, `bookings`, `booking_seats`, `booking_snacks`, `booking_promotions`, `payments`, `refunds` |
+| Framework/operations | `cache`, `cache_locks`, `jobs`, `migrations` |
+
+Schema hiện không tạo các bảng `sessions`, `password_reset_tokens`, `failed_jobs` hoặc `job_batches`; đừng giả định chúng tồn tại khi đổi driver.
+
+## 3. Quan hệ chính
+
+```text
+membership_tiers 1 ── N users 1 ── N refresh_tokens
+                              ├── N loyalty_transactions
+                              ├── N notifications (polymorphic)
+                              ├── N bookings
+                              ├── N movie_reviews
+                              ├── N review_reports
+                              └── N review_moderation_logs (moderator)
+
+cinemas 1 ── N rooms 1 ── N seats
+    └── N snacks       └── N showtimes N ── 1 movies
+                                  ├── N showtime_seats N ── 1 seats
+                                  └── N showtime_ticket_types N ── 1 ticket_types
+
+showtimes 1 ── N seat_locks 1 ── N seat_lock_seats
+showtimes 1 ── N bookings
+bookings 1 ── N booking_seats
+         ├── N booking_snacks
+         ├── N booking_promotions
+         ├── 1 payment
+         └── N refunds (qua payment/booking)
+
+movies 1 ── N movie_reviews
+movie_reviews 1 ── N replies (self parent_id)
+              ├── N review_reactions
+              ├── N review_reports
+              └── N review_moderation_logs
 ```
-Users ──1:N──> Bookings
-Users ──1:1──> MembershipTiers (membership_tier_id FK)
-Users ──1:N──> RefreshTokens
 
-Cinemas ──1:N──> Rooms
-Cinemas ──1:N──> Snacks
+## 4. Identity và membership
 
-Rooms ──1:N──> Seats
-Rooms ──1:N──> Showtimes
+### `users`
 
-Movies ──1:N──> Showtimes
+Key columns:
 
-Showtimes ──1:N──> ShowtimeSeats
-Showtimes ──1:N──> SeatLocks
-Showtimes ──1:N──> ShowtimeTicketTypes
+- `user_id` UUID PK, `username`, unique `email`, nullable `phoneNumber`;
+- nullable `password` cho tài khoản OAuth, nullable `provider`;
+- `role`: `ADMIN | USER | GUEST`;
+- `avatar_url`, `avatar_cloudinary_id`;
+- `loyalty_points`, nullable `membership_tier_id`;
+- timestamps.
 
-Seats ──1:N──> ShowtimeSeats
+Tên `phoneNumber` là camelCase do schema legacy; API/resource có thể map sang camelCase tương ứng.
 
-ShowtimeSeats ──1:N──> SeatLockSeats
-ShowtimeSeats ──1:N──> BookingSeats
+### `refresh_tokens`
 
-TicketTypes ──1:N──> ShowtimeTicketTypes
-TicketTypes ──1:N──> SeatLockSeats
-TicketTypes ──1:N──> BookingSeats
+`token_id` UUID PK, `user_id` FK cascade, `token`, nullable `revoked_at`, timestamps. Expiry được kiểm tra từ token/lifecycle; live schema không có cột `expires_at`.
 
-SeatLocks ──1:N──> SeatLockSeats
+### `membership_tiers`
 
-Bookings ──1:N──> BookingSeats
-Bookings ──1:N──> BookingSnacks
-Bookings ──1:N──> BookingPromotions
-Bookings ──1:1──> Payments
+`membership_tier_id`, `name`, `min_points`, `discount_type`, `discount_value`, `description`, `is_active`, datetime timestamps.
 
-Payments ──1:N──> Refunds
+### `loyalty_transactions`
 
-Promotions ──1:N──> BookingPromotions
+Lịch sử bất biến tương đối của biến động điểm:
+
+```text
+loyalty_transaction_id, user_id, type, points, balance_after,
+source_type, source_id, description, expires_at, timestamps
 ```
 
----
+Index `(user_id, created_at)` và `(source_type, source_id)` hỗ trợ history/idempotency theo nguồn.
 
-## 2. Chi tiết từng bảng
+### `notifications`
 
-### 2.1 `users`
+Laravel database notification: UUID `id`, `type`, polymorphic `notifiable_type/notifiable_id`, JSON/text `data`, nullable `read_at`, timestamps.
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `user_id` | UUID | PK | |
-| `username` | VARCHAR | NOT NULL | Display name |
-| `email` | VARCHAR | UNIQUE, NOT NULL | |
-| `phoneNumber` | VARCHAR | NULLABLE | |
-| `password` | VARCHAR | NULLABLE | Null khi OAuth2 login |
-| `provider` | VARCHAR | NULLABLE | `local`, `google`, `facebook` |
-| `role` | ENUM | DEFAULT 'USER' | `ADMIN`, `USER`, `GUEST` |
-| `avatar_url` | VARCHAR | NULLABLE | Cloudinary URL |
-| `avatar_cloudinary_id` | VARCHAR | NULLABLE | |
-| `loyalty_points` | INT | DEFAULT 0 | Điểm tích lũy |
-| `membership_tier_id` | UUID | NULLABLE, FK | → `membership_tiers` |
-| `created_at` | DATETIME | | |
-| `updated_at` | DATETIME | | |
+## 5. Movie, review và content
 
-### 2.2 `membership_tiers`
+### `movies`
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `membership_tier_id` | UUID | PK | |
-| `name` | VARCHAR | NOT NULL | SILVER, GOLD, PLATINUM |
-| `min_points` | INT | NOT NULL | Điểm tối thiểu |
-| `discount_type` | ENUM | NULLABLE | `PERCENTAGE`, `FIXED_AMOUNT` |
-| `discount_value` | DECIMAL(10,2) | NULLABLE | |
-| `description` | VARCHAR | NULLABLE | |
-| `is_active` | BOOLEAN | DEFAULT true | |
+`movie_id`, title/genre/description, duration/minimum_age, director/actors, poster URL/public ID, trailer URL, status, language, `premiere_date`, timestamps.
 
-### 2.3 `cinemas`
+Status persisted: `SHOWING | UPCOMING`.
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `cinema_id` | UUID | PK | |
-| `name` | VARCHAR | NOT NULL | |
-| `address` | VARCHAR | NOT NULL | |
-| `hotline` | VARCHAR | NOT NULL | |
-| `status` | VARCHAR(30) | DEFAULT 'ACTIVE' | |
-| `is_active` | BOOLEAN | DEFAULT true | Thêm bởi migration sau |
+### `movie_reviews`
 
-### 2.4 `rooms`
+```text
+review_id UUID PK
+parent_id nullable FK → movie_reviews (reply tree)
+movie_id FK, user_id nullable FK
+reviewer_name, rating 1..5, comment
+is_spoiler, status, edited_at
+image_url, video_url, timestamps
+```
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `room_id` | UUID | PK | |
-| `cinema_id` | UUID | FK → cinemas | CASCADE delete |
-| `room_number` | INT | NOT NULL | Phòng 1, 2, 3... |
-| `room_type` | VARCHAR | NOT NULL | STANDARD, IMAX, 3D |
-| `capacity` | INT | NULLABLE | Số ghế |
-| `is_active` | BOOLEAN | DEFAULT true | |
+Review guest có thể giữ `reviewer_name` khi `user_id` null. Xóa movie cascade review; xóa user set null theo migration gốc.
 
-### 2.5 `movies`
+### Review phụ trợ
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `movie_id` | CHAR(36) | PK | UUID |
-| `title` | VARCHAR | NOT NULL | |
-| `genre` | VARCHAR | NULLABLE | "Hài, Gia đình" |
-| `description` | TEXT | NULLABLE | |
-| `duration` | INT | NOT NULL | Phút |
-| `minimum_age` | INT | NULLABLE | |
-| `director` | VARCHAR | NULLABLE | |
-| `actors` | TEXT | NULLABLE | |
-| `poster_url` | VARCHAR | NULLABLE | |
-| `poster_cloudinary_id` | VARCHAR | NULLABLE | |
-| `trailer_url` | VARCHAR | NULLABLE | YouTube URL |
-| `status` | ENUM | DEFAULT 'UPCOMING' | `SHOWING`, `UPCOMING` |
-| `language` | VARCHAR | NULLABLE | EN, VI |
+| Bảng | Cột đáng chú ý |
+|---|---|
+| `review_reactions` | bigint `id`, `review_id`, `reaction_type`, nullable `user_id`, `ip_address` |
+| `review_reports` | UUID `report_id`, review/user/IP, `reason`, `details`, `status` |
+| `review_moderation_logs` | UUID, review, nullable moderator, action, previous/next status, reason |
 
-### 2.6 `showtimes`
+### Hero/contact
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `showtime_id` | UUID | PK | |
-| `room_id` | UUID | FK → rooms | CASCADE delete |
-| `movie_id` | UUID | FK → movies | CASCADE delete |
-| `format` | VARCHAR | NOT NULL | 2D, 3D, IMAX |
-| `start_time` | DATETIME | NOT NULL | |
+| Bảng | Cột đáng chú ý |
+|---|---|
+| `hero_slides` | UUID, title, alt text, image URL/public ID, sort order, active |
+| `contact_submissions` | UUID, name/email/message, attachment URL, source page, IP, user agent, notified_at |
 
-### 2.7 `seats`
+## 6. Cinema, showtime và seats
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `seat_id` | UUID | PK | |
-| `room_id` | UUID | FK → rooms | CASCADE delete |
-| `row_label` | VARCHAR(10) | NOT NULL | A, B, C... |
-| `seat_number` | INT | NOT NULL | 1, 2, 3... |
-| `seat_type` | ENUM | DEFAULT 'NORMAL' | `NORMAL`, `VIP`, `COUPLE` |
+| Bảng | Key/columns chính |
+|---|---|
+| `cinemas` | `cinema_id`; name, address, `city`, `district`, hotline, hero image URL/public ID, `is_active`, status |
+| `rooms` | `room_id`; `cinema_id` FK, room number/type, capacity, active |
+| `seats` | `seat_id`; `room_id` FK, row label, seat number, type `NORMAL/VIP/COUPLE` |
+| `showtimes` | `showtime_id`; room/movie FK, format, `is_active`, start_time |
+| `showtime_seats` | concrete seat/showtime pair, status, calculated price và breakdown |
+| `showtime_ticket_types` | showtime/ticket type pivot, active, sort order |
 
-### 2.8 `showtime_seats`
+`showtime_seats` có composite index `(showtime_id, seat_id)` để phục vụ truy vấn; migration hiện chưa đặt unique constraint cho cặp này, nên service phải tránh tạo concrete seat trùng. Trạng thái: `AVAILABLE | LOCKED | BOOKED`.
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `showtime_seat_id` | UUID | PK | |
-| `seat_id` | UUID | FK → seats | CASCADE delete |
-| `showtime_id` | UUID | FK → showtimes | CASCADE delete |
-| `seat_status` | ENUM | DEFAULT 'AVAILABLE' | `AVAILABLE`, `LOCKED`, `BOOKED` |
-| `price` | DECIMAL(10,2) | NULLABLE | Giá đã tính modifiers |
-| `price_breakdown` | TEXT | NULLABLE | JSON breakdown |
-| **Index** | `(showtime_id, seat_id)` | | |
+## 7. Pricing và catalog
 
-### 2.9 `ticket_types`
+| Bảng | Cột chính |
+|---|---|
+| `price_base` | UUID, name, base_price, active |
+| `price_modifiers` | condition type/value, modifier type/value, active |
+| `ticket_types` | UUID, unique code, label, modifier type/value, active, sort order |
+| `promotions` | unique code, discount type/value, start/end, usage/per-user limit, active |
+| `snacks` | cinema FK, name/type/description/price, image URL/public ID |
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `id` | UUID | PK | |
-| `code` | VARCHAR | UNIQUE | ADULT, CHILD, SENIOR |
-| `label` | VARCHAR | NOT NULL | "Vé Người Lớn" |
-| `base_price` | DECIMAL(10,2) | NOT NULL | |
-| `is_active` | BOOLEAN | DEFAULT true | |
+Ticket type hiện dùng `modifier_type` + `modifier_value`, không có `base_price` như tài liệu cũ.
 
-### 2.10 `showtime_ticket_types`
+## 8. Seat locks và booking snapshot
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `id` | UUID | PK | |
-| `showtime_id` | UUID | FK → showtimes | |
-| `ticket_type_id` | UUID | FK → ticket_types | |
-| `sort_order` | INT | DEFAULT 0 | Thứ tự hiển thị |
+### `seat_locks`
 
-### 2.11 `seat_locks`
+```text
+seat_lock_id UUID PK
+lock_owner_id + lock_owner_type(USER|GUEST_SESSION)
+nullable user_id, showtime_id, lock_key
+created_at, expires_at, active
+```
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `seat_lock_id` | UUID | PK | |
-| `lock_owner_id` | UUID | NOT NULL | User ID hoặc Guest Session ID |
-| `lock_owner_type` | ENUM | NOT NULL | `USER`, `GUEST_SESSION` |
-| `user_id` | UUID | NULLABLE, FK → users | |
-| `showtime_id` | UUID | FK → showtimes | CASCADE delete |
-| `lock_key` | VARCHAR(100) | NOT NULL | UUID token |
-| `created_at` | TIMESTAMP | | |
-| `expires_at` | TIMESTAMP | NOT NULL | TTL = 10 phút (config) |
-| `active` | BOOLEAN | DEFAULT true | |
-| **Index** | `(showtime_id, active)` | | |
-| **Index** | `(lock_owner_type, lock_owner_id)` | | |
+### `seat_lock_seats`
 
-### 2.12 `seat_lock_seats`
+Pivot lock–showtime seat–ticket type và giữ `price` snapshot.
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `id` | UUID | PK | |
-| `seat_lock_id` | UUID | FK → seat_locks | CASCADE delete |
-| `showtime_seat_id` | UUID | FK → showtime_seats | CASCADE delete |
-| `ticket_type_id` | UUID | FK → ticket_types | RESTRICT delete |
-| `price` | DECIMAL(10,2) | NULLABLE | Giá tại thời điểm lock |
+### `bookings`
 
-### 2.13 `price_base`
+Key fields:
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `id` | UUID | PK | |
-| `name` | VARCHAR | NOT NULL | "Base Ticket" |
-| `base_price` | DECIMAL(10,2) | NOT NULL | |
-| `is_active` | BOOLEAN | DEFAULT true | |
+- `booking_id`, nullable `user_id`, `showtime_id`, `booked_at`;
+- `total_price`, `discount_reason`, `discount_value`, `final_price`;
+- persisted status `PENDING_PAYMENT | CONFIRMED | CANCELLED | EXPIRED`;
+- `qr_code`, `qr_payload`, `payment_expires_at`;
+- `loyalty_points_awarded`, refund flags/time/reason;
+- timestamps.
 
-### 2.14 `price_modifiers`
+Refund pending/refunded được biểu diễn chủ yếu qua payment/refund và được transformer map vào booking response; không nằm trong enum DB của `bookings.status` hiện tại.
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `id` | UUID | PK | |
-| `name` | VARCHAR | NOT NULL | Tên modifier |
-| `condition_type` | VARCHAR | NOT NULL | `DAY_OF_WEEK`, `SEAT_TYPE`, `SHOWTIME_FORMAT` |
-| `condition_value` | VARCHAR | NOT NULL | `WEEKEND`, `VIP`, `3D` |
-| `modifier_type` | VARCHAR(50) | NOT NULL | `PERCENTAGE`, `FIXED_AMOUNT` |
-| `modifier_value` | DECIMAL(10,2) | NOT NULL | |
-| `is_active` | BOOLEAN | DEFAULT true | |
+### Booking child tables
 
-### 2.15 `promotions`
+| Bảng | Snapshot |
+|---|---|
+| `booking_seats` | showtime seat, nullable source lock seat, ticket type, price |
+| `booking_snacks` | snack + quantity |
+| `booking_promotions` | promotion + `discount_amount` + applied_at |
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `promotion_id` | UUID | PK | |
-| `code` | VARCHAR | UNIQUE | Mã khuyến mãi |
-| `name` | VARCHAR | NOT NULL | |
-| `description` | TEXT | NULLABLE | |
-| `discount_type` | ENUM | NOT NULL | `PERCENTAGE`, `FIXED_AMOUNT` |
-| `discount_value` | DECIMAL(10,2) | NOT NULL | |
-| `start_date` | DATETIME | NOT NULL | |
-| `end_date` | DATETIME | NOT NULL | |
-| `usage_limit` | INT | NULLABLE | Tổng số lần dùng |
-| `per_user_limit` | INT | NULLABLE | Giới hạn mỗi user |
-| `is_active` | BOOLEAN | DEFAULT true | |
+## 9. Payments và refunds
 
-### 2.16 `snacks`
+### `payments`
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `snack_id` | UUID | PK | |
-| `cinema_id` | UUID | FK → cinemas | CASCADE delete |
-| `name` | VARCHAR | NOT NULL | |
-| `type` | VARCHAR(50) | NOT NULL | popcorn, drink, combo |
-| `description` | TEXT | NULLABLE | |
-| `price` | DECIMAL(10,2) | NOT NULL | |
-| `image_url` | VARCHAR | NULLABLE | |
-| `image_cloudinary_id` | VARCHAR | NULLABLE | |
+`payment_id` UUID; unique `booking_id` (quan hệ 1:1); nullable `user_id`; gateway identifiers `order_id`, `txn_ref`, `transaction_id`; URL/JSON response; amount/currency và gateway amount/currency/exchange rate; status/method; paid/completed/error metadata.
 
-### 2.17 `bookings`
+| Field | Values |
+|---|---|
+| `method` | `PAYPAL`, `MOMO` |
+| `status` | `PENDING`, `COMPLETED`, `FAILED`, `CANCELLED`, `REFUND_PENDING`, `REFUNDED` |
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `booking_id` | UUID | PK | |
-| `user_id` | UUID | NULLABLE, FK → users | Null = guest booking |
-| `showtime_id` | UUID | FK → showtimes | CASCADE delete |
-| `booked_at` | DATETIME | NOT NULL | |
-| `total_price` | DECIMAL(10,2) | DEFAULT 0 | Giá trước giảm |
-| `discountReason` | VARCHAR | NULLABLE | |
-| `discountValue` | DECIMAL(10,2) | NULLABLE | |
-| `finalPrice` | DECIMAL(10,2) | DEFAULT 0 | Giá cuối |
-| `status` | ENUM | DEFAULT 'PENDING_PAYMENT' | Xem enum bên dưới |
-| `qr_code` | VARCHAR | NULLABLE | URL QR code |
-| `qr_payload` | TEXT | NULLABLE | |
-| `payment_expires_at` | DATETIME | NULLABLE | Hết hạn thanh toán |
-| `loyalty_points_awarded` | BOOLEAN | DEFAULT false | |
-| `refunded` | BOOLEAN | DEFAULT false | |
-| `refunded_at` | DATETIME | NULLABLE | |
-| `refund_reason` | VARCHAR | NULLABLE | |
-| **Index** | `(showtime_id, status)` | | |
+`txn_ref` và `booking_id` có unique index, hỗ trợ idempotency một payment active record trên mỗi booking theo schema hiện tại.
 
-**Booking Status**: `PENDING_PAYMENT` → `CONFIRMED` | `CANCELLED` | `EXPIRED` | `REFUND_PENDING` | `REFUNDED`
+### `refunds`
 
-### 2.18 `booking_seats`
+`refund_id`, `payment_id`, `booking_id`, `user_id`, status `PENDING|COMPLETED|FAILED`, amount/currency, gateway method/transaction/response, reason và timestamps nghiệp vụ.
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `id` | UUID | PK | |
-| `booking_id` | UUID | FK → bookings | CASCADE delete |
-| `showtime_seat_id` | UUID | FK → showtime_seats | CASCADE delete |
-| `seat_lock_seat_id` | UUID | FK → seat_lock_seats | CASCADE delete |
-| `ticket_type_id` | UUID | FK → ticket_types | RESTRICT delete |
-| `price` | DECIMAL(10,2) | NOT NULL | Giá tại booking |
+## 10. Integrity và quy tắc migration
 
-### 2.19 `booking_snacks`
+- Mọi thay đổi schema phải đi qua migration mới; không sửa migration đã chạy ở môi trường dùng chung.
+- Monetary values dùng `decimal`, không dùng float trong DB.
+- UUID sinh ở application/model; luôn đặt FK/index cho đường query chính.
+- Xóa cascade chỉ dùng khi child không còn ý nghĩa độc lập; user ở review/report nên set null nếu cần giữ audit.
+- Booking/payment/review moderation cần transaction và idempotency ở service, không chỉ dựa FK.
+- Sau migration, kiểm tra bằng:
 
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `id` | UUID | PK | |
-| `booking_id` | UUID | FK → bookings | CASCADE delete |
-| `snack_id` | UUID | FK → snacks | CASCADE delete |
-| `quantity` | INT | NOT NULL | |
-
-### 2.20 `booking_promotions`
-
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `id` | UUID | PK | |
-| `booking_id` | UUID | FK → bookings | CASCADE delete |
-| `promotion_id` | UUID | FK → promotions | CASCADE delete |
-| `applied_at` | DATETIME | NOT NULL | |
-
-### 2.21 `payments`
-
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `payment_id` | UUID | PK | |
-| `booking_id` | UUID | UNIQUE FK → bookings | 1:1 relation, CASCADE delete |
-| `transaction_id` | VARCHAR | NULLABLE | Gateway transaction ID |
-| `amount` | DECIMAL(10,2) | NOT NULL | Số tiền VND |
-| `currency` | VARCHAR(10) | DEFAULT 'VND' | |
-| `gateway_amount` | DECIMAL(10,2) | NULLABLE | Số tiền trên gateway (USD) |
-| `gateway_currency` | VARCHAR(10) | NULLABLE | USD |
-| `exchange_rate` | DECIMAL(10,4) | NULLABLE | Tỷ giá VND→USD |
-| `status` | ENUM | DEFAULT 'PENDING' | Xem enum bên dưới |
-| `method` | ENUM | NOT NULL | `PAYPAL`, `MOMO` |
-| `payer_email` | VARCHAR | NULLABLE | |
-| `error_message` | VARCHAR | NULLABLE | |
-| `created_at` | DATETIME | NOT NULL | |
-| `completed_at` | DATETIME | NULLABLE | |
-
-**Payment Status**: `PENDING` → `SUCCESS` | `FAILED` | `REFUND_PENDING` | `REFUNDED` | `REFUND_FAILED`
-
-### 2.22 `refunds`
-
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `refund_id` | UUID | PK | |
-| `payment_id` | UUID | FK → payments | CASCADE delete |
-| `amount` | DECIMAL(10,2) | NOT NULL | |
-| `refund_method` | VARCHAR | NOT NULL | PAYPAL, MOMO |
-| `refund_gateway_txn_id` | VARCHAR | NULLABLE | |
-| `reason` | VARCHAR | NULLABLE | |
-| `created_at` | DATETIME | NOT NULL | |
-| `refunded_at` | DATETIME | NULLABLE | |
-
-### 2.23 `refresh_tokens`
-
-| Column | Type | Constraints | Ghi chú |
-|--------|------|-------------|---------|
-| `id` | UUID | PK | |
-| `user_id` | UUID | FK → users | |
-| `token` | VARCHAR | UNIQUE | |
-| `expires_at` | DATETIME | NOT NULL | |
-
----
-
-## 3. Enums
-
-| Enum | Values |
-|------|--------|
-| `BookingStatus` | `PENDING_PAYMENT`, `CONFIRMED`, `CANCELLED`, `EXPIRED` |
-| `PaymentStatus` | `PENDING`, `COMPLETED`, `FAILED`, `REFUNDED`, `CANCELLED`, `REFUND_PENDING` |
-| `PaymentMethod` | `PAYPAL`, `MOMO` |
-| `SeatStatus` | `AVAILABLE`, `LOCKED`, `BOOKED` |
-| `RefundStatus` | `PENDING`, `COMPLETED`, `FAILED` |
-| `LockOwnerType` | `USER`, `GUEST_SESSION` |
-| `MovieStatus` | `SHOWING`, `UPCOMING` |
-| `SeatType` | `NORMAL`, `VIP`, `COUPLE` |
-| `UserRole` | `ADMIN`, `USER`, `GUEST` |
-| `DiscountType` | `PERCENTAGE`, `FIXED_AMOUNT` |
+```powershell
+php artisan migrate:status
+php artisan db:show --counts
+php artisan test
+```

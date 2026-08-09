@@ -1,157 +1,201 @@
-# PROJECT_STRUCTURE.md — Cấu trúc dự án Backend Laravel (Modular)
+# Cấu trúc dự án Backend Laravel
 
-## Tổng quan
+> Cập nhật theo mã nguồn ngày 2026-08-09.
 
-Dự án sử dụng Laravel 12 (PHP 8.2+) với kiến trúc modular theo domain.
+## 1. Tổng quan
 
-- Domain code đặt trong `app/Modules/<Domain>`.
-- Thành phần framework/core đặt trong `app/Core`.
-- Thành phần shared cross-domain đặt trong `app/Shared`.
-- API routes được tách file theo domain trong `routes/api/*.php` và nạp qua `routes/api.php`.
+Backend dùng Laravel 12 với kiến trúc modular theo domain:
 
-## Cây thư mục chính
+- nghiệp vụ nằm trong `app/Modules/<Domain>`;
+- middleware/guard/helper cấp framework nằm trong `app/Core`;
+- service/support dùng chung nằm trong `app/Shared`;
+- model Eloquent tập trung tại `app/Models`;
+- API route tách theo domain trong `routes/api/*.php` và được require từ `routes/api.php`.
+
+Snapshot hiện tại:
+
+| Hạng mục | Số lượng |
+|---|---:|
+| Domain modules | 13 |
+| Model Eloquent | 30 |
+| Migration | 47 |
+| Route files dưới `routes/api` | 15 |
+| Toàn bộ routes | 152 |
+| API routes | 146 |
+| API có `auth.jwt` | 95 |
+| API có `role:admin` | 75 |
+
+## 2. Cây thư mục
 
 ```text
 movie-booking-backend-laravel/
 ├── app/
 │   ├── Core/
-│   │   ├── Auth/
-│   │   │   └── JwtGuard.php
-│   │   ├── Helpers/
-│   │   │   └── SessionHelper.php
+│   │   ├── Auth/JwtGuard.php
+│   │   ├── Helpers/SessionHelper.php
 │   │   └── Http/
-│   │       ├── Controllers/
-│   │       │   └── BaseController.php
+│   │       ├── Controllers/BaseController.php
 │   │       └── Middleware/
 │   │           ├── JwtAuthMiddleware.php
 │   │           ├── OptionalJwtAuthMiddleware.php
 │   │           ├── CheckRole.php
 │   │           └── EncryptCookies.php
-│   │
 │   ├── Shared/
 │   │   ├── Services/
 │   │   │   ├── TokenService.php
 │   │   │   ├── ExchangeRateService.php
 │   │   │   └── RedisLockService.php
 │   │   └── Support/
+│   │       ├── JwtSigningKey.php
 │   │       └── SecurityUtils.php
-│   │
 │   ├── Modules/
 │   │   ├── Booking/
-│   │   │   ├── Controllers/
-│   │   │   ├── Requests/
-│   │   │   ├── DTO/
-│   │   │   ├── Repositories/
-│   │   │   ├── Services/
-│   │   │   └── Transformers/
-│   │   ├── Payment/
-│   │   │   ├── Controllers/
-│   │   │   │   └── Gateways/
-│   │   │   ├── DTO/
-│   │   │   ├── Requests/
-│   │   │   ├── Repositories/
-│   │   │   ├── Services/
-│   │   │   └── Transformers/
-│   │   ├── Movie/
-│   │   │   ├── Controllers/
-│   │   │   └── Resources/
-│   │   ├── User/
-│   │   │   ├── Controllers/
-│   │   │   └── Services/
-│   │   ├── Membership/
-│   │   │   ├── Controllers/
-│   │   │   ├── Resources/
-│   │   │   └── Services/
 │   │   ├── Cinema/
-│   │   │   ├── Controllers/
-│   │   │   ├── Resources/
-│   │   │   └── Services/
-│   │   ├── Showtime/
-│   │   │   ├── Controllers/
-│   │   │   ├── Repositories/
-│   │   │   ├── Resources/
-│   │   │   ├── Services/
-│   │   │   └── Transformers/
-│   │   ├── Ticketing/
-│   │   │   ├── Controllers/
-│   │   │   ├── Resources/
-│   │   │   └── Services/
+│   │   ├── Contact/
+│   │   ├── HeroSlide/
+│   │   ├── Membership/
+│   │   ├── Movie/
+│   │   ├── Notification/
+│   │   ├── Payment/
 │   │   ├── Pricing/
-│   │   │   ├── Controllers/
-│   │   │   ├── Resources/
-│   │   │   └── Services/
-│   │   └── Promotion/
-│   │       ├── Controllers/
-│   │       ├── Resources/
-│   │       └── Services/
-│   │
-│   ├── Console/
+│   │   ├── Promotion/
+│   │   ├── Showtime/
+│   │   ├── Ticketing/
+│   │   └── User/
+│   ├── Console/Commands/
 │   ├── DTO/
 │   ├── Enums/
 │   ├── Exceptions/
 │   ├── Models/
+│   ├── Notifications/
 │   ├── Providers/
 │   └── ValueObjects/
-│
+├── bootstrap/
+├── config/
+│   ├── booking.php
+│   ├── cinema.php
+│   ├── cors.php
+│   ├── currency.php
+│   ├── jwt.php
+│   ├── momo.php
+│   ├── payment.php
+│   └── paypal.php
+├── database/
+│   ├── factories/
+│   ├── migrations/
+│   └── seeders/
+├── docs/
 ├── routes/
 │   ├── api.php
 │   ├── api/
+│   │   ├── admin.php
 │   │   ├── auth.php
-│   │   ├── movie.php
+│   │   ├── booking.php
 │   │   ├── cinema.php
-│   │   ├── showtime.php
-│   │   ├── ticketing.php
+│   │   ├── contact.php
+│   │   ├── hero-slide.php
+│   │   ├── membership.php
+│   │   ├── movie.php
+│   │   ├── notification.php
+│   │   ├── payment.php
 │   │   ├── pricing.php
 │   │   ├── promotion.php
-│   │   ├── booking.php
-│   │   ├── payment.php
-│   │   ├── user.php
-│   │   ├── membership.php
-│   │   ├── admin.php
-│   │   └── misc.php
-│   ├── web.php
-│   └── console.php
-│
-├── config/
-├── database/
-├── docs/
-└── tests/
+│   │   ├── showtime.php
+│   │   ├── ticketing.php
+│   │   └── user.php
+│   ├── console.php
+│   └── web.php
+├── tests/
+├── docker-compose.yml
+├── Dockerfile
+├── composer.json
+└── artisan
 ```
 
-## Quy ước tổ chức mã
+File `routes/api/misc.php` trong tài liệu cũ đã bị loại bỏ; contact, hero slide và notification có route file riêng.
 
-1. Mỗi domain module tự quản lý Controller/Request/Service/Repository/Resource của riêng nó.
-2. Logic dùng chung qua nhiều domain đặt ở `app/Shared`.
-3. Thành phần technical framework-level (guard, middleware, base controller) đặt ở `app/Core`.
-4. Model Eloquent hiện vẫn tập trung ở `app/Models` để tương thích Laravel mặc định.
-5. `routes/api.php` chỉ làm nhiệm vụ nạp các file route con theo domain.
+## 3. Pattern bên trong module
 
-## Routing modular
+Không phải module nào cũng cần đủ mọi thư mục, nhưng pattern chung là:
 
-File `routes/api.php` hiện không chứa route business trực tiếp, mà chỉ `require` các file:
+```text
+app/Modules/<Domain>/
+├── Controllers/       # HTTP boundary
+├── Requests/          # Validation
+├── DTO/               # Input/output value objects
+├── Services/          # Business logic
+├── Repositories/      # Data access/query
+├── Resources/         # Laravel API resource
+└── Transformers/      # Map response legacy/current
+```
 
-- `routes/api/auth.php`
-- `routes/api/movie.php`
-- `routes/api/cinema.php`
-- `routes/api/showtime.php`
-- `routes/api/ticketing.php`
-- `routes/api/promotion.php`
-- `routes/api/booking.php`
-- `routes/api/payment.php`
-- `routes/api/user.php`
-- `routes/api/membership.php`
-- `routes/api/pricing.php`
-- `routes/api/admin.php`
-- `routes/api/misc.php`
+Controller nên mỏng: validate/resolve context → gọi service → format HTTP response. Transaction, idempotency và state transition thuộc service/repository.
 
-## Trạng thái xác thực sau refactor
+## 4. Route registration
 
-- Route registry: chạy thành công (`php artisan route:list`).
-- Test suite hiện tại: pass (`php artisan test`):
-    - 2 tests passed
-    - 2 assertions
+`routes/api.php` require đúng 15 file route ở trên. Các route tự có prefix `/api` do Laravel bootstrap.
 
-## Ghi chú
+| Middleware | Mục đích |
+|---|---|
+| `api` | Nhóm middleware API mặc định |
+| `auth.jwt` | Bắt buộc access token hợp lệ |
+| `auth.optional` | Parse JWT nếu có, vẫn cho guest qua |
+| `role:admin` | Bắt buộc role `ADMIN` |
+| `throttle:*` | Giới hạn auth, review, contact và payment callback/status |
 
-- Cấu trúc đã chuyển từ monolithic `app/Http/Controllers` và `app/Services` sang domain modules.
-- Nếu bổ sung domain mới, tạo thêm `app/Modules/<NewDomain>` và `routes/api/<new-domain>.php`, sau đó include trong `routes/api.php`.
+Google OAuth nằm ở web routes:
+
+- `GET /oauth2/authorization/google`
+- `GET /login/oauth2/code/google`
+
+## 5. Core và Shared đáng chú ý
+
+### JWT
+
+`TokenService` và `JwtGuard` cùng dùng `JwtSigningKey::resolve()` để tránh lỗi “provided key is too short” và đảm bảo HS256 có tối thiểu 32 byte entropy. Helper:
+
+1. giải mã secret có prefix `base64:`;
+2. dùng `JWT_SECRET` nếu đủ dài;
+3. nếu secret ngắn, derive HMAC-SHA256 từ `APP_KEY` và secret cấu hình;
+4. ném lỗi rõ ràng nếu cả hai nguồn không đủ an toàn.
+
+### Guest/session
+
+`SessionHelper` tạo `SessionContext` từ JWT hoặc `X-Session-Id`. Guest booking còn có capability token riêng (`X-Booking-Access-Token`) để chống đọc booking theo UUID.
+
+### Lock và pricing
+
+- `RedisLockService` hỗ trợ lock phân tán/TTL.
+- Database vẫn lưu `seat_locks`, `seat_lock_seats` và `showtime_seats` làm trạng thái nghiệp vụ.
+- `ExchangeRateService` phục vụ chuyển VND sang currency của PayPal.
+
+## 6. Console và scheduler
+
+`locks:cleanup-expired` được schedule mỗi phút trong `routes/console.php`. Command:
+
+- giải phóng lock hết hạn;
+- đưa ghế về `AVAILABLE`;
+- release Redis lock;
+- chuyển booking quá hạn thanh toán sang `EXPIRED`.
+
+Khi deploy phải chạy scheduler (`php artisan schedule:work` hoặc cron `schedule:run`) và queue worker nếu notification/mail chạy queue.
+
+## 7. Quy ước thêm domain mới
+
+1. Tạo `app/Modules/<Domain>` với các layer cần thiết.
+2. Tạo model/migration trong thư mục Laravel chuẩn.
+3. Tạo `routes/api/<domain>.php`, require từ `routes/api.php`.
+4. Áp `auth.jwt` và `role:admin` ở route, không chỉ kiểm tra ở frontend.
+5. Dùng Form Request cho payload phức tạp.
+6. Bọc mutation nhiều bảng trong transaction.
+7. Thêm feature/unit test cho happy path, validation, ownership/role và idempotency.
+8. Cập nhật [API_SPEC.md](./API_SPEC.md), [DATABASE.md](./DATABASE.md) và [FLOW.md](./FLOW.md).
+
+## 8. Lệnh kiểm tra cấu trúc
+
+```powershell
+php artisan route:list
+php artisan migrate:status
+php artisan test
+vendor\bin\pint --test
+```
