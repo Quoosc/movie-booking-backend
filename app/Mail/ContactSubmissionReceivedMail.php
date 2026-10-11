@@ -18,8 +18,8 @@ class ContactSubmissionReceivedMail extends Mailable
         $isAnonymous = $this->submission->email === 'anonymous@noreply.local';
 
         $subject = $isAnonymous
-            ? '[CinesVerse] Phản ánh chất lượng mới'
-            : '[CinesVerse] Liên hệ mới từ ' . $this->submission->name;
+            ? '[Cineon] Phản ánh chất lượng mới'
+            : '[Cineon] Liên hệ mới từ ' . $this->submission->name;
 
         return $this->subject($subject)
             ->view('emails.contact.submission-received', [

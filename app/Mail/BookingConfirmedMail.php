@@ -24,7 +24,7 @@ class BookingConfirmedMail extends Mailable
         ]);
 
         $movieTitle = $this->booking->showtime?->movie?->title ?? 'Bộ phim';
-        $subject    = "[CinesVerse] Đặt vé thành công – {$movieTitle}";
+        $subject    = "[Cineon] Đặt vé thành công – {$movieTitle}";
 
         return $this->subject($subject)
             ->view('emails.booking.confirmed', [

@@ -16,7 +16,7 @@ class UsersSeeder extends Seeder
         $silverTier = MembershipTier::where('name', 'SILVER')->first();
 
         User::updateOrCreate(
-            ['email' => 'admin@cinesverse.local'],
+            ['email' => 'admin@Cineon.local'],
             [
                 'user_id'            => Str::uuid()->toString(),
                 'username'           => 'QuocAdmin',

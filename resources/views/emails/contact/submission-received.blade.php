@@ -15,7 +15,7 @@
           {{-- HEADER --}}
           <tr>
             <td style="background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 50%,#ec4899 100%);border-radius:16px 16px 0 0;padding:36px 40px;text-align:center;">
-              <p style="margin:0 0 8px 0;font-size:11px;letter-spacing:4px;text-transform:uppercase;color:rgba(255,255,255,0.7);">CinesVerse</p>
+              <p style="margin:0 0 8px 0;font-size:11px;letter-spacing:4px;text-transform:uppercase;color:rgba(255,255,255,0.7);">Cineon</p>
               @if($isAnonymous)
                 <h1 style="margin:0;font-size:26px;font-weight:800;color:#ffffff;letter-spacing:1px;">Phản ánh chất lượng</h1>
                 <p style="margin:10px 0 0 0;font-size:13px;color:rgba(255,255,255,0.75);">Một khách hàng vừa gửi góp ý ẩn danh qua website</p>
@@ -110,7 +110,7 @@
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;">
                 <tr>
                   <td align="center">
-                    <a href="mailto:{{ $submission->email }}?subject=Re: Phản hồi từ CinesVerse"
+                    <a href="mailto:{{ $submission->email }}?subject=Re: Phản hồi từ Cineon"
                        style="display:inline-block;padding:13px 36px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#ffffff;font-size:13px;font-weight:700;text-decoration:none;border-radius:50px;letter-spacing:1px;">
                       Trả lời ngay
                     </a>
@@ -128,7 +128,7 @@
               <p style="margin:0 0 4px 0;font-size:12px;color:#4b5563;">
                 Gửi lúc: {{ $submission->created_at?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i — d/m/Y') }}
               </p>
-              <p style="margin:0;font-size:11px;color:#374151;">CinesVerse &mdash; Hệ thống đặt vé xem phim</p>
+              <p style="margin:0;font-size:11px;color:#374151;">Cineon &mdash; Hệ thống đặt vé xem phim</p>
             </td>
           </tr>
 

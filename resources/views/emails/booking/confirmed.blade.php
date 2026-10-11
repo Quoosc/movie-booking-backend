@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Xác nhận đặt vé – CinesVerse</title>
+  <title>Xác nhận đặt vé – Cineon</title>
 </head>
 <body style="margin:0;padding:0;background-color:#0f0f1a;font-family:'Segoe UI',Arial,sans-serif;">
 
@@ -54,7 +54,7 @@
         {{-- HEADER --}}
         <tr>
           <td style="background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 50%,#ec4899 100%);border-radius:16px 16px 0 0;padding:32px 40px;text-align:center;">
-            <p style="margin:0 0 6px 0;font-size:11px;letter-spacing:4px;text-transform:uppercase;color:rgba(255,255,255,0.7);">CinesVerse</p>
+            <p style="margin:0 0 6px 0;font-size:11px;letter-spacing:4px;text-transform:uppercase;color:rgba(255,255,255,0.7);">Cineon</p>
             <h1 style="margin:0;font-size:24px;font-weight:800;color:#ffffff;">🎬 Đặt vé thành công!</h1>
             <p style="margin:8px 0 0 0;font-size:13px;color:rgba(255,255,255,0.8);">
               Vé của bạn đã được xác nhận. Mang QR code đến rạp để check-in.
@@ -208,7 +208,7 @@
               Đặt lúc: {{ $booking->booked_at?->setTimezone('Asia/Ho_Chi_Minh')->format('H:i — d/m/Y') }}
             </p>
             <p style="margin:0;font-size:11px;color:#374151;">
-              CinesVerse &mdash; Hệ thống đặt vé xem phim &mdash;
+              Cineon &mdash; Hệ thống đặt vé xem phim &mdash;
               <a href="mailto:{{ config('contact.receiver_email') }}" style="color:#6b7280;text-decoration:none;">Liên hệ hỗ trợ</a>
             </p>
           </td>
