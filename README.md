@@ -19,9 +19,11 @@
 
 **[FRONTEND SOURCE CODE →](https://github.com/Quoosc/movie-booking-frontend)** · **[BACKEND SOURCE CODE →](https://github.com/Quoosc/movie-booking-backend)** · **[PERSONAL PORTFOLIO →](https://quoc-portfolio-roan.vercel.app/)**
 
-The live demo is the Cineon frontend. This repository contains the backend API and does not provide a standalone customer-facing website. No public backend API base URL is included. The live demo is the frontend; the repository links identify the frontend and backend source.
+The live demo is the Cineon frontend. This repository contains the backend API and does not provide a standalone customer-facing website. The temporary cloud demo API is `https://cineon.161.33.81.211.sslip.io/api`, with a [health endpoint](https://cineon.161.33.81.211.sslip.io/up). The API was deployed on 12 October 2026, with VPS removal planned for 20 October 2026; no automatic shutdown is scheduled. The current showtime data covers 12–16 October. Frontend Vercel environment settings must point to this URL.
 
 ## Project Overview
+
+For the cloud demo deployment kit (MySQL, Redis, HTTPS, worker, scheduler and Vercel configuration), see [Deploy cloud demo](docs/DEPLOY-CLOUD-DEMO.md). The guide includes the deployed API status and the remaining frontend/provider configuration steps.
 
 Cineon is a movie-booking platform. This repository contains its Laravel API: a PHP application that exposes REST endpoints to the React frontend and owns persisted booking, pricing, authentication, and payment state. Domain code is organized into modules for movies, cinemas, showtimes, bookings, payments, promotions, pricing, memberships, ticketing, and users. The API supports authenticated members and guest checkout, calculates booking totals on the server, and integrates PayPal and MoMo. For seat contention, it combines database transactions, persisted seat status, and expiring Redis locks. MySQL is configured for the Docker Compose environment; the local `.env.example` defaults to SQLite. Compose also defines Nginx, a database queue worker, and a scheduler. The engineering focus is coordinating state across browser requests, the database, Redis, and external payment providers.
 
