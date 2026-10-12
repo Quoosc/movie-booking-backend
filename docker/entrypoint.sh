@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -e
 
-mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache
+mkdir -p storage/app/public storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache || true
 
 if [ ! -f .env ] && [ -f .env.example ]; then

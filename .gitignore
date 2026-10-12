@@ -25,3 +25,8 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.docker.example
+!.env.cloud.example
+/.demo-deploy/
+/demo-data.sql
+/demo-uploads/
+/demo-provider.env

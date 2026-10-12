@@ -5,6 +5,10 @@ node_modules
 .env*
 !.env.example
 !.env.docker.example
+.demo-deploy
+demo-data.sql
+demo-uploads
+demo-provider.env
 storage/logs
 storage/framework/cache
 storage/framework/sessions

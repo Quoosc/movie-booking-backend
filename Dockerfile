@@ -34,6 +34,13 @@ FROM base AS vendor
 COPY composer.json composer.lock ./
 RUN composer install --no-interaction --no-dev --prefer-dist --optimize-autoloader --no-scripts
 
+FROM nginx:1.27-alpine AS web
+
+COPY --from=frontend-build /app/public /var/www/html/public
+COPY docker/nginx/cloud.conf /etc/nginx/conf.d/default.conf
+RUN mkdir -p /var/www/html/storage/app/public \
+    && ln -s /var/www/html/storage/app/public /var/www/html/public/storage
+
 FROM base AS app
 
 COPY --from=vendor /var/www/html/vendor ./vendor
@@ -45,6 +52,7 @@ RUN composer dump-autoload --no-interaction --no-dev --optimize \
     && chmod -R ug+rw storage bootstrap/cache
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/php/cloud-pool.conf /usr/local/etc/php-fpm.d/zz-cloud-pool.conf
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 ENTRYPOINT ["entrypoint.sh"]

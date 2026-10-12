@@ -1,0 +1,125 @@
+name: cineon-demo
+
+x-app: &app
+  image: cineon-backend:demo
+  build:
+    context: .
+    target: app
+  restart: unless-stopped
+  env_file: .env.cloud
+  environment:
+    RUN_MIGRATIONS: "false"
+  volumes:
+    - storage_data:/var/www/html/storage
+  networks: [cineon]
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  app:
+    <<: *app
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  nginx:
+    image: cineon-web:demo
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - storage_data:/var/www/html/storage:ro
+    networks: [cineon]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      API_HOST: ${API_HOST:?Generate .env.cloud first}
+      ACME_EMAIL: ${ACME_EMAIL:?Generate .env.cloud first}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      nginx:
+        condition: service_healthy
+    networks: [cineon]
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:?Generate .env.cloud first}
+      MYSQL_USER: ${DB_USERNAME:?Generate .env.cloud first}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Generate .env.cloud first}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Generate .env.cloud first}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --innodb-buffer-pool-size=64M --performance-schema=OFF --max-connections=30 --table-open-cache=128 --table-definition-cache=400
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysql -h 127.0.0.1 -u \"$$MYSQL_USER\" -D \"$$MYSQL_DATABASE\" -Nse 'SELECT 1'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks: [cineon]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [cineon]
+
+  queue:
+    <<: *app
+    command: php artisan queue:work --sleep=3 --tries=3 --timeout=60 --max-time=3600
+    depends_on:
+      app:
+        condition: service_healthy
+
+  scheduler:
+    <<: *app
+    command: php artisan schedule:work --no-interaction
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  db_data:
+  redis_data:
+  storage_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  cineon:
+    driver: bridge
